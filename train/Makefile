@@ -9,15 +9,17 @@ NT_INC      = -I$(NOTORCH_DIR)
 
 UNAME := $(shell uname)
 ifeq ($(UNAME), Darwin)
-  BLAS_FLAGS = -DUSE_BLAS -DACCELERATE -DACCELERATE_NEW_LAPACK -framework Accelerate
+  BLAS_DEFS = -DUSE_BLAS -DACCELERATE -DACCELERATE_NEW_LAPACK
+  BLAS_LIBS = -framework Accelerate
 endif
 ifeq ($(UNAME), Linux)
-  BLAS_FLAGS = -DUSE_BLAS -lopenblas
+  BLAS_DEFS = -DUSE_BLAS
+  BLAS_LIBS = -lopenblas
 endif
 
 CC      = cc
-CFLAGS  = -O2 -Wall -Wextra -std=c11 $(NT_INC) $(BLAS_FLAGS)
-LDFLAGS = -lm
+CFLAGS  = -O2 -Wall -Wextra -std=c11 $(NT_INC) $(BLAS_DEFS)
+LDFLAGS = -lm $(BLAS_LIBS)
 
 .PHONY: all clean
 
