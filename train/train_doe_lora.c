@@ -608,6 +608,9 @@ typedef struct {
     int     n_pairs;
 } DoeCorpus;
 
+/* Parse <human>q\n<ai>a\n<human>q'... format per janus.doe/m.c:929-960.
+ * Tags are STRIPPED — only content between tags becomes tokens.
+ * mask=0 on human-segment tokens, mask=1 on ai-segment tokens. */
 static DoeCorpus* corpus_load(const char* path) {
     FILE* f = fopen(path, "rb");
     if (!f) { fprintf(stderr, "[corpus] cannot open %s\n", path); return NULL; }
@@ -620,10 +623,8 @@ static DoeCorpus* corpus_load(const char* path) {
     fclose(f);
 
     int n_pairs = 0;
-    for (long i = 0; i < sz - 1; i++) {
-        if (i == 0 || buf[i-1] == '\n') {
-            if (buf[i] == 'Q' && buf[i+1] == ':') n_pairs++;
-        }
+    for (long i = 0; i + 7 <= sz; i++) {
+        if ((i == 0 || buf[i-1] == '\n') && memcmp(buf + i, "<human>", 7) == 0) n_pairs++;
     }
 
     DoeCorpus* c = calloc(1, sizeof(DoeCorpus));
@@ -633,23 +634,21 @@ static DoeCorpus* corpus_load(const char* path) {
 
     long i = 0;
     while (i < sz) {
-        while (i < sz && !(buf[i] == 'Q' && (i+1 < sz && buf[i+1] == ':') &&
-                           (i == 0 || buf[i-1] == '\n')))
+        while (i + 7 <= sz && !((i == 0 || buf[i-1] == '\n') && memcmp(buf + i, "<human>", 7) == 0))
             i++;
-        if (i >= sz) break;
-        long q_start = i + 2;
-        while (q_start < sz && (buf[q_start] == ' ' || buf[q_start] == '\t')) q_start++;
+        if (i + 7 > sz) break;
+        long q_start = i + 7;
         long q_end = q_start;
-        while (q_end < sz && !(buf[q_end] == 'A' && (q_end+1 < sz && buf[q_end+1] == ':') &&
-                               (q_end == 0 || buf[q_end-1] == '\n')))
+        while (q_end + 4 <= sz && !((buf[q_end-1] == '\n' || q_end == q_start) &&
+                                     memcmp(buf + q_end, "<ai>", 4) == 0))
             q_end++;
-        if (q_end >= sz) break;
-        long a_start = q_end + 2;
-        while (a_start < sz && (buf[a_start] == ' ' || buf[a_start] == '\t')) a_start++;
+        if (q_end + 4 > sz) break;
+        long a_start = q_end + 4;
         long a_end = a_start;
-        while (a_end < sz && !(buf[a_end] == 'Q' && (a_end+1 < sz && buf[a_end+1] == ':') &&
-                               (a_end == 0 || buf[a_end-1] == '\n')))
+        while (a_end + 7 <= sz && !((buf[a_end-1] == '\n') && memcmp(buf + a_end, "<human>", 7) == 0))
             a_end++;
+        if (a_end + 7 > sz) a_end = sz;
+
         size_t q_len = (size_t)(q_end - q_start);
         size_t a_len = (size_t)(a_end - a_start);
         while (q_len > 0 && (buf[q_start + q_len - 1] == '\n' ||
@@ -670,7 +669,7 @@ static DoeCorpus* corpus_load(const char* path) {
         i = a_end;
     }
     free(buf);
-    fprintf(stderr, "[corpus] %d Q/A pairs parsed from %s\n", c->n_pairs, path);
+    fprintf(stderr, "[corpus] %d <human>/<ai> pairs parsed from %s\n", c->n_pairs, path);
     return c;
 }
 
@@ -680,11 +679,15 @@ static void corpus_free(DoeCorpus* c) {
     free(c->q_texts); free(c->a_texts); free(c);
 }
 
+/* DoE personality format per janus.doe/m.c:929-960: tags stripped, segments
+ * concatenated. q_text encoded with trailing "\n", a_text encoded with
+ * trailing "\n". Mask=0 on q_tokens, mask=1 on a_tokens (handled by caller
+ * via lq boundary). */
 static int* encode_pair(nt_bpe* bpe, const char* q, const char* a,
                         uint32_t* lq_out, uint32_t* la_out, int max_total) {
     char qbuf[8192], abuf[8192];
-    snprintf(qbuf, sizeof(qbuf), "### Question: %s\n### Answer: ", q);
-    snprintf(abuf, sizeof(abuf), "%s", a);
+    snprintf(qbuf, sizeof(qbuf), "%s\n", q);
+    snprintf(abuf, sizeof(abuf), "%s\n", a);
 
     int* q_toks = malloc((size_t)max_total * sizeof(int));
     int* a_toks = malloc((size_t)max_total * sizeof(int));
@@ -823,14 +826,6 @@ int main(int argc, char** argv) {
         nt_tape_backward(loss_idx);
         float lr_now = nt_schedule_get_lr(&sched);
         nt_tape_chuck_step(lr_now, loss);
-
-        nt_tape* tp_sync = nt_tape_get();
-        for (int bl = 0; bl < cfg.B; bl++) {
-            for (int p = 0; p < NUM_LORA_PROJ; p++) {
-                nt_tensor_sync_cpu(tp_sync->entries[lr->blocks[bl][p].A_idx].output);
-                nt_tensor_sync_cpu(tp_sync->entries[lr->blocks[bl][p].B_idx].output);
-            }
-        }
 
         ema_loss = (step == 0) ? loss : (0.95f * ema_loss + 0.05f * loss);
 
