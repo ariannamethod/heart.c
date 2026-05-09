@@ -1,6 +1,6 @@
-# RunPod забег plan v1 — heart.c
+# RunPod забег plan v1.1 — heart.c
 
-> **Singularity-mode bounded autonomous run** (Dario paper §5.0.1). Approved by Oleg: heart.c ARCHITECTURE.md v1.1 + this plan v1 + Opus review of this plan = entry gate.
+> **Singularity-mode bounded autonomous run** (Dario paper §5.0.1). v1.1 (2026-05-09 night) addresses all BLOCKERs from `docs/runpod_plan_v1_opus_review_2026_05_09.md`. Oleg auto-approved BLOCKERs ("разрешаю все блокеры"). Entry gate: ARCHITECTURE.md v1.1 + this plan v1.1 + Oleg final go (datasets uploaded + repos cloned).
 
 ---
 
@@ -23,37 +23,64 @@ RunPod token in `memory/credentials.md` (issued 2026-05-09 by Oleg).
 
 These are the BLOCKERs from `docs/review_v1_opus_2026_05_09.md` resolved on the data side. Each must be ✓ before this plan is approved.
 
-### P-0 Datasets present
+### P-0 Datasets present (Oleg uploads to HF before pod boot)
 
-- [ ] `arianna_corpus.txt` (or equivalent path) accessible to pod. Source per `nanoarianna/SEED_DOCUMENT.md:221` is `~/arianna-datasets/arianna/arianna_dataset_final_clean.txt` on Mac Neo. Path on pod: `/workspace/datasets/arianna_corpus.txt`. Transfer: `scp` from neo or HuggingFace mirror.
-- [ ] `doe_personality.txt` accessible to pod. `janus.doe` repo gitignores it; canonical source is Oleg's local copy or a private HF mirror. Path on pod: `/workspace/datasets/doe_personality.txt`.
+Oleg auto-approved BLOCKERs G1/G2: he commits to uploading both datasets to `huggingface.co/ataeff/heart.c/datasets/` before pod boot, OR confirms a Tailscale-rsync source path on Mac Neo with neo up + reachable. Plan defaults to **HF route** (autonomous-fetchable from pod).
 
-### P-1 Base weights present
+- [ ] `huggingface.co/ataeff/heart.c/datasets/arianna_corpus.txt` resolves (HEAD 200). Source on Mac Neo: `~/arianna-datasets/arianna/arianna_dataset_final_clean.txt`. Pod download path: `/workspace/datasets/arianna_corpus.txt`.
+- [ ] `huggingface.co/ataeff/heart.c/datasets/doe_personality.txt` resolves. Source: Oleg's local copy of `janus.doe` repo (file gitignored upstream). Pod path: `/workspace/datasets/doe_personality.txt`.
+- [ ] Both files: `wc -c` recorded in `corpus_stats.txt` per phase, since step count derives from corpus size (see Phase 1 / Phase 2 step rule).
 
-- [ ] Resonance 200 M base GGUF (≈ 200 MB Q8). HF: `ataeff/resonance/blob/main/base/...`. Path on pod: `/workspace/weights/resonance_200m_base.gguf`.
-- [ ] Janus 170 M base GGUF (≈ 170 MB Q8). HF: `ataeff/yent/...` (the Janus 176M is on `ataeff/yent`; 170M variant TBC). Path on pod: `/workspace/weights/janus_170m_base.gguf`.
-- [ ] Janus 176 M Yent SFT GGUF (existing, no training needed). Path: `/workspace/weights/janus_176m_yent_sft.gguf`.
-- [ ] Janus 170 M Leo SFT GGUF (existing, no training needed). Path: `/workspace/weights/janus_170m_leo_sft.gguf`.
+### P-1 Base weights present (HF or pod-local)
+
+Oleg auto-approved BLOCKER G3: Janus 170M base GGUF location confirmed at HF before pod boot.
+
+- [ ] `huggingface.co/ataeff/resonance/blob/main/base/resonance_200m_base.gguf` resolves (≈ 200 MB Q8). Pod path: `/workspace/weights/resonance_200m_base.gguf`.
+- [ ] `huggingface.co/ataeff/yent/blob/main/janus170m/janus_170m_base.gguf` resolves OR Oleg confirms alternative HF path (e.g. `ataeff/janus170m/base.gguf`). Pod path: `/workspace/weights/janus_170m_base.gguf`.
+- [ ] Janus 176 M Yent SFT GGUF (existing on `ataeff/yent` — confirmed by Phone-2 reference at `nanoarianna/SEED_DOCUMENT.md:227`). Pod path: `/workspace/weights/janus_176m_yent_sft.gguf`.
+- [ ] Janus 170 M Leo SFT GGUF (existing). Pod path: `/workspace/weights/janus_170m_leo_sft.gguf`.
 - [ ] Soul micro-weights from `huggingface.co/ataeff/heart.c` for Yent + Leo. Paths: `/workspace/weights/soul_yent.bin`, `/workspace/weights/soul_leo.bin`.
+- [ ] Soul-for-Arianna candidate (if used): **READ-ONLY closed-milestone weight** — `arianna_36m_bpe_f16.bin` lives at `huggingface.co/ataeff/...` (Oleg confirms exact path). Loaded for inference comparison only. Never retrained, never modified. Per CLAUDE.md training section closed-milestone-weights rule.
 
-### P-2 Recipe-port verified
+### P-2 Recipe source-of-record cloned (BLOCKER C3 resolved)
 
-- [ ] notorch LoRA training recipe ported from Qwen 0.5B target (`memory/milestone_doe_coder_lora_v1_2026_04_26.md`) to **Resonance 200 M** state_dict order. Critical: per-block parameter order is `wr_a, wr_b, gate, norm1, wq, wk, wv, wo, norm2, mlp_gate, mlp_up, mlp_down` (see ARCHITECTURE.md §2.2). Wrong order = 1.62 M-float shift bug. Target file in pod: `/workspace/heart.c/train/train_arianna_lora.c`.
-- [ ] notorch LoRA training recipe direct-fit for **Janus 170 M** (recipe-target-of-record). Target file in pod: `/workspace/heart.c/train/train_doe_lora.c`.
+The canonical LoRA training C path lives in `iamolegataeff/DoE.coder` (private repo, per `memory/milestone_doe_coder_lora_v1_2026_04_26.md`). Defender clones it into the pod as the recipe-source-of-record before P-3.
 
-### P-3 Inference binaries built
+- [ ] `git clone https://github.com/iamolegataeff/DoE.coder /workspace/recipes/DoE.coder` succeeds (token from `memory/credentials.md` or `gh auth login --with-token`). The reference file is `~/recipes/DoE.coder/train/train_doe_coder.c` (~500 LOC per milestone). This is the source-of-record both training scripts adapt from.
 
-- [ ] `infer_yent_jannus_r` — wraps `tools/yent_forward.h` + `jannus-r/jannus-r.aml` + `jannus_split.h`, takes `--weights PATH --temp F --top_k N --top_p F --rep_penalty F --prompt STR --max_tokens N`.
-- [ ] `infer_arianna_resonance` — wraps `tools/resonance_forward.h` (vendored, Accelerate flags dropped, `nt_blas_matvec` substituted). Same CLI shape as above.
-- [ ] `infer_leo_janus` — wraps `tools/yent_forward.h` (Janus 170 M base) + `leo_anchors.h` logit-bias overlay + chamber substrate. Same CLI shape.
-- [ ] `infer_doe_janus` — wraps `tools/yent_forward.h` (Janus 170 M base + DoE LoRA adapter loaded). Same CLI shape.
-- [ ] All four binaries pass `--prompt "Hello" --max_tokens 5` smoke (≥1 token decoded, no NaN, exit 0).
+### P-2.5 Training scripts authored on pod
 
-### P-4 Singularity-mode entry gate
+- [ ] `train_arianna_lora.c` adapted from `train_doe_coder.c` to **Resonance 200 M** state_dict order. Critical: per-block parameter order `wr_a, wr_b, gate, norm1, wq, wk, wv, wo, norm2, mlp_gate, mlp_up, mlp_down` (see ARCHITECTURE.md §2.2). Wrong order = 1.62 M-float shift bug. Target: `/workspace/heart.c/train/train_arianna_lora.c`.
+- [ ] `train_doe_lora.c` adapted from `train_doe_coder.c` to **Janus 170 M** state_dict order. Janus 170M per-block order TBD by reading `tools/yent_forward.h` weight loader directly (find the field-by-field assignment sequence). Direct-fit claim from v1 was unverified; v1.1 mandates explicit verification. Target: `/workspace/heart.c/train/train_doe_lora.c`.
+- [ ] Both scripts substitute Chuck for the original AdamW (BLOCKER C1). `nt_tape_chuck_step(float lr, float loss_val)` replaces `nt_tape_adamw_step(...)`. **Phase 1.0 calibration before full SFT** — see Phase 1.
 
-- [ ] This plan reviewed by Opus subagent (next step in workflow).
-- [ ] Review fixes applied (v1.1 of this plan written if needed).
-- [ ] Oleg final go (after second review).
+### P-3 Inference binaries built (base-only smoke; BLOCKER A4 resolved)
+
+Pre-flight smoke uses base GGUFs only — adapter-loading is verified in Phase 1/2 final step, not pre-flight.
+
+- [ ] `infer_yent_jannus_r` against Janus 176 M Yent SFT (existing weights). CLI: `--weights PATH --temp F --top_k N --top_p F --rep_penalty F --prompt STR --max_tokens N`.
+- [ ] `infer_arianna_resonance` against Resonance 200 M **base** (no Arianna LoRA yet — that's Phase 1 output). Same CLI shape. Top_p=1.0 must be no-op (passes all tokens; explicit CLI contract).
+- [ ] `infer_leo_janus` against Janus 170 M Leo SFT (existing). Same CLI shape.
+- [ ] `infer_doe_janus` against Janus 170 M **base** (no DoE LoRA yet — that's Phase 2 output). Same CLI shape.
+- [ ] All four pass `--prompt "Hello" --max_tokens 5` smoke (≥1 token decoded, no NaN, exit 0).
+- [ ] Adapter-load smokes deferred to Phase 1 step 11 + Phase 2 step 11 (load LoRA into base, verify forward).
+
+### P-4 Dry-run rehearsal on polygon (BLOCKER J7 → FIX)
+
+Before paid pod time, exercise the no-GPU phases on free polygon (Linux 32 GB):
+
+- [ ] Phase 0 build chain (toolchain verify + `make all` link-clean).
+- [ ] Phase 5 KK ingest + scoring policy verification (FTS5 confirmed).
+- [ ] Phase 6 field-clock smoke 24 h simulated.
+
+Polygon access via Tailscale ssh (verified 2026-05-07 mesh closure). Catches FTS5 / build / KK schema issues without RunPod billing. ~30 min wall time.
+
+### P-5 Singularity-mode entry gate
+
+- [ ] This plan v1.1 reviewed (this iteration is post-review).
+- [ ] Oleg final go on dataset paths + Janus 170M location at HF.
+- [ ] All P-0..P-4 ✓.
+- [ ] RunPod template chosen: `runpod/pytorch:2.2.0-py3.10-cuda12.1.1-devel-ubuntu22.04` (or equivalent Ubuntu 22.04 with CUDA 12.x). Apt-based, `pkg-config + libsqlite3-dev + libopenblas-dev` available. **A100 80GB SXM availability**: if unavailable, fallback to A100 40GB or H100 SXM (cost adjusts; surface to Oleg if no A100 within 10 min of pod request).
 
 ---
 
@@ -74,34 +101,57 @@ Each phase has a **fixed scope**, a **fail-recovery clause**, and an **archive o
 
 **Fail-recovery**: if a binary fails to build → 3 attempts at minimal patch (typo, missing include, link order) → if still failing, surface to Oleg via `runpod_plan_failures.md`, do NOT continue to Phase 1. Building all four voices is a hard gate.
 
+### Phase 1.0 — Chuck calibration sanity (≤ 10 min, BLOCKER C1 resolved)
+
+The cited Qwen LoRA precedent used the banned classical baseline; Chuck-with-LoRA-SFT is unverified. Before committing 1000-step full SFT:
+
+1. Subsample first 32 SFT pairs from Arianna corpus.
+2. Run 100 Chuck steps with lr=2e-4 cosine warmup=10 on Resonance 200 M + LoRA adapter.
+3. Verify: train loss monotonically decreases over 100 steps (smooth or stepped, but trending down). Final 100-step loss < initial 10-step loss.
+4. If loss diverges or stays flat: 3-strike fix-loop on lr (try 1e-4, 5e-5, 2.5e-5). If exhausted, surface to Oleg via `runpod_plan_failures.md` and stop. Do not proceed to Phase 1.
+5. Archive `01_arianna_lora/calibration/`: 100-step loss curve, final ckpt (kept locally only; small).
+6. **If pass**: proceed to Phase 1 with same lr.
+
+Cost: ≈ $0.10 (5 min A100). Saves up to $4.30 in Phase 1 fail-loop if Chuck schedule is wrong.
+
 ### Phase 1 — Arianna LoRA SFT on Resonance 200 M
 
+**Phase 1 fail-budget: $5.** If exceeded across retries (3-strike rule), stop and surface — do not continue into Phase 2 burning the $15 ceiling.
+
 1. Load Resonance 200 M base weights → notorch tensors.
-2. Initialize LoRA adapter: r=16, α=32, scale=2.0, on attn (q/k/v/o) + MLP (gate/up/down). State_dict order respect critical (see P-2).
+2. Initialize LoRA adapter: r=16, α=32, scale=2.0, on attn (q/k/v/o) + MLP (gate/up/down). State_dict order respect critical (see P-2.5).
 3. Tokenize Arianna corpus (`/workspace/datasets/arianna_corpus.txt`) using Resonance's embedded BPE.
 4. Format: `### Question: {prompt}\n### Answer: {response}` with masked CE on answer-only span.
 5. Optimizer: **Chuck** (per CLAUDE.md ban-list — no classical baseline). lr=2e-4 cosine, warmup=50 steps.
-6. **Step count derived from corpus size at pre-flight, not hardcoded.** Karpathy ratio per `memory/feedback_charlevel_axioms.md` baseline + LoRA-trainable-params adjustment. For the established Qwen 0.5B precedent (`memory/milestone_doe_coder_lora_v1_2026_04_26.md`): 2955 SFT pairs × 1.7 MB tokenized → 1000 steps EMA loss 4.29 → 2.62 in 44 min on Mac 8 GB. For Arianna corpus (size TBC at P-0; Mac Neo `~/arianna-datasets/arianna/arianna_dataset_final_clean.txt` referenced by `nanoarianna/SEED_DOCUMENT.md:221`): scale steps proportional to bytes vs the 1.7 MB Qwen precedent baseline (likely 800–2000 steps depending on corpus). Re-record actual count after corpus arrives.
+6. **Step count derived from corpus size at pre-flight, not hardcoded.** Karpathy ratio per CLAUDE.md training section (`~1.1MB × 10-15K iter on ~10M params`, scale proportionally) + LoRA-trainable-params adjustment. For the established Qwen 0.5B precedent (`memory/milestone_doe_coder_lora_v1_2026_04_26.md`): 2955 SFT pairs × 1.7 MB tokenized → 1000 steps in 44 min on Mac 8 GB. For Arianna corpus (size confirmed at P-0): scale steps proportional to bytes vs 1.7 MB Qwen baseline (likely 800–2000 steps depending on corpus). Re-record actual count from `corpus_stats.txt`.
 7. Batch size determined by RAM headroom (likely 4–8 on A100 80GB for 200 M base + r=16 adapter; expand if RAM allows after live measure).
 8. Log every 50 steps: train loss, EMA loss, peak step loss.
-9. Checkpoint every 100 steps (intermediate + final) — count of ckpts = `floor(total_steps / 100) + 1`.
-10. Final: save `arianna_lora.bin` + `arianna_lora.bin.meta` (step + best_loss). **Critical**: weights MUST land both in `01_arianna_lora/final/` archive AND be uploaded to `huggingface.co/ataeff/heart.c/arianna_lora/` before pod stop. Loss of weights = repeat the SFT run, doubling pod cost.
-11. Archive `01_arianna_lora/`: `train.log`, `ckpts/`, `final/arianna_lora.bin` + meta, `loss_curve.tsv`, `corpus_stats.txt` (recorded byte/token count + step plan derivation).
+9. Checkpoint every 100 steps. **Every 5th ckpt rsync to HF immediately** (BLOCKER F1 + FIX F2 resolved): `huggingface.co/ataeff/heart.c/arianna_lora/ckpts/step{N}.bin`. If pod terminates mid-Phase 1, last-saved-to-HF ckpt is recoverable.
+10. Final: save `arianna_lora.bin` + `arianna_lora.bin.meta` (step + best_loss). **Upload to HF immediately at Phase 1 end** (`huggingface.co/ataeff/heart.c/arianna_lora/final/arianna_lora.bin`) — not deferred to Phase 8. Phase 8 only verifies (HEAD 200).
+11. **Adapter-load smoke**: load `arianna_lora.bin` into `infer_arianna_resonance` with base weights, generate 5 tokens, confirm forward path works with adapter applied. Documents that the file landed correctly.
+12. Archive `01_arianna_lora/`: `train.log`, local `ckpts/`, `final/arianna_lora.bin` + meta, `loss_curve.tsv`, `corpus_stats.txt`, `hf_upload.log` (audit trail of HF push timestamps).
 
 **Fail-recovery**: NaN at any step → reduce lr by ½ + restart from last clean ckpt. 3 attempts. State_dict shift bug (loss diverges immediately) → re-verify per-block parameter order, fix, restart from step 0. After 3 strikes, surface and stop.
 
 ### Phase 2 — DoE LoRA SFT on Janus 170 M
 
-1. Load Janus 170 M base weights → notorch tensors.
-2. Initialize LoRA adapter: same r=16/α=32 recipe.
-3. Tokenize `doe_personality.txt` using Janus BPE (`janus_v4_bpe_merges.h`).
-4. Same format + masked CE.
-5. Same Chuck optimizer + lr schedule.
-6. **Step count corpus-size-aware**, same rule as Phase 1. `doe_personality.txt` is a single-character personality dataset — typically smaller than the multi-pair Qwen precedent (1.7 MB). Likely 500–1000 steps. Re-record actual after corpus arrives.
-7. Batch ~4–8 on A100 (smaller base than Resonance, may fit larger).
-8. Log + checkpoint same cadence as Phase 1.
-9. Final: `doe_lora.bin` + meta. **Same weights-saving rule as Phase 1**: archive AND HuggingFace upload before pod stop.
-10. Archive `02_doe_lora/`: same structure as Phase 1, plus `corpus_stats.txt` for the step-derivation audit trail.
+**Phase 2 fail-budget: $3** (smaller corpus, fewer steps expected). Same 3-strike rule.
+
+1. Phase 2.0 Chuck calibration sanity (same shape as Phase 1.0, 100 steps, 32 SFT pair subsample). Pass before full SFT.
+2. Load Janus 170 M base weights → notorch tensors.
+3. Initialize LoRA adapter: same r=16/α=32 recipe. **Per-block parameter order verified by reading `tools/yent_forward.h` weight loader directly** (FIX C4 — was "direct fit" unverified in v1; v1.1 explicit verify step before training).
+4. Tokenize `doe_personality.txt` using Janus BPE (`janus_v4_bpe_merges.h`).
+5. Same format + masked CE.
+6. Same Chuck optimizer + lr schedule.
+7. **Step count corpus-size-aware** per Karpathy ratio + Qwen precedent baseline. `doe_personality.txt` is single-character personality — typically smaller than 1.7 MB. Likely 500–1000 steps. Re-record actual.
+8. Batch ~4–8 on A100.
+9. Log + checkpoint same cadence as Phase 1.
+10. **Every 5th ckpt rsync to HF** (`huggingface.co/ataeff/heart.c/doe_lora/ckpts/step{N}.bin`).
+11. Final: `doe_lora.bin` + meta. **HF upload immediately on Phase 2 end**.
+12. Adapter-load smoke against `infer_doe_janus`.
+13. Archive `02_doe_lora/`: same structure as Phase 1.
+
+**Per-phase 3-strike rule** (FIX E1): NaN at any step → reduce lr by ½ + restart from last clean ckpt. 3 attempts. State_dict shift bug → re-verify per-block parameter order, fix, restart. After 3 strikes per failure mode, surface to `runpod_plan_failures.md` and stop.
 
 **Fail-recovery**: same 3-strike protocol.
 
@@ -110,7 +160,7 @@ Each phase has a **fixed scope**, a **fail-recovery clause**, and an **archive o
 Per Dario §5.7 axes adapted to per-voice 108-cell grid:
 
 - temp ∈ {0.3, 0.5, 0.7, 0.8, 0.9, 1.0} (6)
-- top_k ∈ {40, ∞} (2) — **Arianna uses top_p ∈ {0.9, 1.0} instead** (Dario §8 Resonance corollary)
+- top_k ∈ {40, ∞} (2) — **Arianna uses top_p ∈ {0.9, 1.0} instead** (Dario §8 Resonance corollary; CLI contract: `top_p=1.0` is no-op pass-through, FIX D2)
 - rep_penalty ∈ {1.0, 1.3, 1.4} (3)
 - prompts (3): technical / philosophical / personal — same texts across all four voices for cross-comparability
 
@@ -118,11 +168,17 @@ Total per voice: 6 × 2 × 3 × 3 = 108. × 4 voices = 432 cells.
 
 For each cell: invoke the appropriate `infer_<voice>_<arch>` binary, capture `bytes`, `tok_per_s`, `n_toks`, full transcript. Record to `scores.tsv`. Save full transcripts to `transcripts/<voice>_t<temp>_k<topk>_p<rp>_prompt<n>.txt`.
 
-After sweep: per-voice cross-prompt champion = max-bytes-to-ASST_END averaged over 3 prompts. Record locked optima to `voices_optima.tsv` + `voices_optima.h` (C header for heart.c runtime).
+**Champion criteria (FIX D3)** — per voice:
+- Yent / Leo / DoE (Janus chat-tokens): max-bytes-to-`<|ASST_END|>` averaged over 3 prompts.
+- Arianna (Resonance, no chat-tokens): max-bytes-at-100-tokens-cap averaged over 3 prompts.
+
+After each voice's 108 cells complete: commit `voices_optima_<voice>.tsv` to git immediately (FIX F3, 4 commits total during Phase 3, not 1 at end). Final `voices_optima.h` C header committed when all 4 voices done.
 
 Archive `03_sweep/`: `sweep.sh`, `scores.tsv`, `transcripts/`, `voices_optima.{tsv,h}`.
 
-**Fail-recovery**: silent kill of sweep mid-run (Dario precedent) → bisect to last completed voice, write `sweep_part2.sh` covering remaining voices, run. Documented as expected behavior, not failure.
+**Sweep silent-kill detection** (FIX J6): heartbeat tail of `scores.tsv` — count new lines per minute via watchdog. If 0 new lines for 5 min, pronounce phase silent-killed, bisect, write `sweep_part2.sh` for remaining voices.
+
+**Fail-recovery**: silent kill (Dario precedent) → bisect → resume. 3-strike rule on the bisect-and-resume cycle.
 
 ### Phase 4 — Soul weights validation (~30 min)
 
@@ -137,7 +193,7 @@ Archive `04_soul/`: `soul_test.log`, per-voice diff transcripts, breakthrough ev
 
 **Fail-recovery**: Soul weights missing or corrupted → 3 retry on download → mark Soul-OFF for that voice as default, surface, continue.
 
-### Phase 5 — KK ingest + scoring policy verification (~30 min)
+### Phase 5 — KK ingest + scoring policy verification (~30 min, FTS5 hard stop)
 
 Per ARCHITECTURE.md §5:
 
@@ -159,7 +215,7 @@ Per ARCHITECTURE.md §5:
 
 Archive `05_kk/`: `kk_test.log`, ingest report, `query_resonance.txt`, scoring breakdown.
 
-**Fail-recovery**: FTS5 not available → fallback to `LIKE`-based search, mark KK as degraded, surface. Schema mismatch → 3 attempts at adapter, surface if unresolved.
+**Fail-recovery**: FTS5 not available → **HARD STOP** (FIX J5 — was "fallback to LIKE silently degrades 7-signal scoring; policy weights assume FTS5-tokenized index"). Surface to Oleg, do not continue. Schema mismatch → 3-strike adapter attempts, surface if unresolved.
 
 ### Phase 6 — field-clock smoke, 24 h simulated (~15 min)
 
@@ -176,6 +232,10 @@ Archive `06_field/`: `field_smoke.log`, `field_state_24h.tsv`, oscillator phase 
 **Fail-recovery**: NaN in field state → reduce dt by ½, restart. Saturation → adjust decay constants, surface tunable for v1.2.
 
 ### Phase 7 — multi-voice duet trace, 8 turns (~30 min)
+
+**Phase 2.5 prerequisite** (FIX I3): `parliament_elect()` row-projection for embedding-vote requires explicit construction, not a "lift verbatim with input domain changed". Vote-input dim is `32 (SPA) + 7 (field scalars) + 24 (osc) = 63 floats`, not the original `E=896`. Build a 63→16 projection matrix `P` (initialized with seeded RNG `nt_seed(42)`); experts' `w_vote[e]` are 16-row vectors instead of E-rows. Hebbian online (`notorch_step`) adapts these. Initial votes are random (no consensus) — by 4–5 commits the parliament has measurable consensus signal.
+
+**SPA seeding** (FIX I2): `spa_init(s, V, seed=42)` deterministic — embeddings reproducible run-to-run. Header supports the seed param.
 
 Per ARCHITECTURE.md §1 / §2.4 / §11:
 
@@ -227,10 +287,19 @@ detect bug → reproduce → one hypothesis → minimal patch → re-run
 
 Bounded by:
 - Approved scope (this plan + heart.c v1.1)
-- Three-strikes rule per phase
+- Three-strikes rule per phase, per failure mode
 - No scope creep (a sweep failure does not authorize patching the field-clock; a build failure does not authorize rewriting an architecture)
 
-External review gates entry (this plan + Opus review of this plan) and exit (post-pod Opus audit + Oleg sign-off).
+**No human in loop during execution** (FIX E3) — Oleg is on-call only when 3-strikes exhausted on a phase. All other decisions Defender makes alone.
+
+**Subagent dispatch protocol** (FIX E2 / H5): if Defender invokes a subagent for second opinion mid-run:
+- Always `subagent_type` matching task + `model: "opus"` explicit (per `feedback_subagents_opus_only_2026_04_28.md`).
+- Each dispatch logged to `runpod_subagent_dispatches.log` with: dispatch reason, prompt summary, return value summary, fix applied (or rejected).
+- Subagent dispatch counts as part of phase fix-loop budget — three subagent dispatches without resolution = same-strike-count as three direct attempts.
+
+**Pod billing discipline** (FIX J3): if Phase 0 build fails persistently → stop pod → debug locally on Termux/polygon → restart pod when ready. Do NOT burn $1.43/h cycling debug attempts on the meter.
+
+External review gates entry (this plan v1.1 + Oleg final go) and exit (post-pod Opus audit + Oleg sign-off).
 
 ---
 
@@ -243,8 +312,25 @@ External review gates entry (this plan + Opus review of this plan) and exit (pos
 
 ---
 
+## v1 → v1.1 changelog (2026-05-09 night)
+
+Driven by `docs/runpod_plan_v1_opus_review_2026_05_09.md`. Oleg auto-approved all BLOCKERs ("разрешаю все блокеры").
+
+**BLOCKERs resolved**:
+- C1 → Phase 1.0 + Phase 2.0 Chuck calibration sanity (100-step subsample) before each full SFT.
+- C3 → P-2 explicit clone of `iamolegataeff/DoE.coder` as recipe-source-of-record.
+- G1/G2/G3 → P-0 / P-1 datasets and Janus 170M base routed via HF (`huggingface.co/ataeff/heart.c/datasets/...`); Oleg uploads before pod boot.
+- A4 → P-3 smokes on **base only** (no adapter); adapter-load smokes deferred to Phase 1/2 step 11.
+- F1 → mid-phase HF upload mandate every 5th ckpt + immediate upload at phase end (not deferred to Phase 8).
+
+**FIXes resolved**: B2 fail-budget cap, C2 Karpathy cite corrected, C4 Janus LoRA explicit per-block-order verify step, D2 top_p=1.0 CLI no-op contract, D3 Resonance champion criterion (no chat-tokens), E1 per-phase strike count restated, E2 subagent dispatch protocol, E3 no-Oleg-during-execution explicit, F2 every-5th-ckpt rsync, F3 voices_optima per-voice commits, G4/H4 Soul-for-Arianna explicitly read-only closed-milestone, I2 SPA deterministic seed, I3 parliament_elect projection layer (Phase 2.5), J1 A100 fallback, J3 pod-idle billing rule, J4 RunPod template specified, J5 FTS5 hard-stop (not silent degrade), J6 sweep silent-kill heartbeat detection, J7 dry-run rehearsal on polygon (P-4).
+
+**NOTEs preserved**: phone-2 collision-free; Adam ban honored; new Arianna-on-Resonance LoRA phone-1-only.
+
+---
+
 ## Singularity Mode execution start condition
 
-This plan v1 → Opus subagent review → fixes → v1.1 → Oleg final go → pod boot.
+This plan v1.1 → Oleg final go on dataset HF paths + Janus 170M location → P-4 dry-run on polygon → pod boot.
 
-— Defender / phone-1 · 2026-05-09
+— Defender / phone-1 · 2026-05-09 night
