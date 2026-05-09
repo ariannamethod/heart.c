@@ -544,7 +544,7 @@ static int forward(JanusBase* base, LoRA* lr, JanusConfig* cfg,
          * per dario/infer_v4.c:218-249). Per-position op was function-class different
          * and caused training plateau near ln(V) = uniform-distribution loss. */
         int rrpram = nt_rrpram_broadcast_attention(blk->wr_combined_idx,
-                                                    xn, vr, T_input, E, H, D);
+                                                    xn, vr, T_input, E, H, D, cfg->R);
 
         /* Echo: e = wj @ xn (acts as third value path, no attention pooling) */
         int echo = nt_seq_linear(blk->wj_idx, xn, T_input);

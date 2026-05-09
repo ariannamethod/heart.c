@@ -501,7 +501,7 @@ static int forward(ResonanceBase* base, LoRA* lr, ResonanceConfig* cfg,
         /* RRPRAM low-rank attention (canonical broadcast pattern with sc=1/sqrt(D),
          * per dario/infer_v4.c:218-249). Pre-built wr_combined, base wr_a/wr_b frozen. */
         int rrpram = nt_rrpram_broadcast_attention(blk->wr_combined_idx,
-                                                    xn, v, T_input, E, H, D);
+                                                    xn, v, T_input, E, H, D, cfg->R);
 
         /* Per-head sigmoid gate blend: pre-computed g_expanded[E] on tape.
          * blend = g_tiled * content + (1-g_tiled) * rrpram */
