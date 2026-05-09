@@ -824,6 +824,14 @@ int main(int argc, char** argv) {
         float lr_now = nt_schedule_get_lr(&sched);
         nt_tape_chuck_step(lr_now, loss);
 
+        nt_tape* tp_sync = nt_tape_get();
+        for (int bl = 0; bl < cfg.B; bl++) {
+            for (int p = 0; p < NUM_LORA_PROJ; p++) {
+                nt_tensor_sync_cpu(tp_sync->entries[lr->blocks[bl][p].A_idx].output);
+                nt_tensor_sync_cpu(tp_sync->entries[lr->blocks[bl][p].B_idx].output);
+            }
+        }
+
         ema_loss = (step == 0) ? loss : (0.95f * ema_loss + 0.05f * loss);
 
         if (step % A.log_every == 0) {
