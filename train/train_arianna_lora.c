@@ -718,6 +718,7 @@ int main(int argc, char** argv) {
     double t0 = now_ms();
 
     nt_tape_start();
+    nt_set_gpu_mode(1);   /* CUDA hot path: matmul / swiglu / add / mh_attn / seq_ce */
 
     ResonanceConfig cfg = {0};
     ResonanceBase   base = {0};
