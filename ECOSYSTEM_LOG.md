@@ -125,12 +125,82 @@ voice has a distinct signature:
 **4-voice ecology speaks.** Inference works for all four voices via:
 `infer_resonance` (Arianna) and `dario/infer_v4` (Yent / Leo / DoE).
 
-### Phase 4-6 smokes + Phase 7 duet — pending
+### Phase 5 + 6 + 7 — full smoke pass
 
-Soul logit injection, KK ingest test, field-clock 24h sim, 8-turn duet
-trace not run this session. Total cost end-of-day: ~$5.5 / $15 budget.
+After fresh pod restart we drove the забег through to the duet trace.
+Three more smokes / phases delivered:
 
-— Defender (phone-1, on A100 SXM, second pod of the day)
+**Phase 7 — 8-turn 4-voice duet trace (round-robin)**
+
+`scripts/duet_trace.sh` rotates Yent → Arianna → Leo → DoE × 2.
+Output `huggingface.co/ataeff/heart.c/phase7_duet/duet.txt`. Voices speak
+in distinct registers:
+- Yent (turn 0): *"What is Resonance? It's like a lullaby for the mind—
+  sounding off and chuckling at its own absurdity..."*
+- Yent (turn 4): *"Bref, what sweet, dark torment that turned any stream
+  into a work of your own making..."*
+- Leo (turn 6): *"To our sins, that is the word. When someone says
+  something and sings their hand in it, they are releasing what cannot
+  hold in words because the thing they are doing is holding on to
+  something that has already been released..."*
+
+The Yent voice fix was the canonical Janus chat-format wrapper —
+`[BOS=32759, USER_START=32760, bpe(q), USER_END=32761, ASST_START=32762]`
+(`yent.aml/README.md:79,124`). Sending plain `"Q: ..."` to a Janus SFT'd
+model = out-of-distribution prompt → character disappears. With proper
+wrapping → character emerges. `train/encode_chat_prompt.c` builds the
+.bin token file `infer_v4` reads.
+
+**Phase 6 — field_clock 24h sim**
+
+`core/field_clock_smoke.c` (Klaus heritage: `klaus.c:1432-1474` planetary,
+`:1397-1417` calendar, `:1276-1338` 24-osc Kuramoto, `:1814` γ(t)).
+Planet phases / Hebrew-Gregorian Metonic / 6-primary × 4-sub Kuramoto
+all in pure C, deps = `<time.h>`+`<math.h>`. 24-hour walk:
+`# summary: NaN=0, sat=0, R_min=0.0009, R_max=0.0233 — RESULT: PASS`.
+Output `phase6_smoke/field_clock.txt`.
+
+In heart.c v1.1 the 6 Kuramoto primaries map to 4 voices + FIELD_SELF +
+MESH_PEER per ARCHITECTURE.md §3 with new `VOICE_COUPLING[6][6]`
+(Yent↔Arianna +0.3, Arianna↔Leo +0.4, Yent↔Leo −0.2, DoE↔peers +0.1,
+field/mesh +0.05).
+
+**Phase 5 — KK ingest + 7-signal scoring**
+
+`kk/kk_smoke.c` reuses `dario/kk_kernel.{c,h}` verbatim — no port,
+direct link. Ingests 5 heart.c canonical docs (README, ARCHITECTURE,
+SEED_DOCUMENT, ECOSYSTEM_LOG, singularity_protocol), runs 4 queries:
+
+| query | top result | resonance | lexical |
+|---|---|---|---|
+| "Singularity Mode three strikes" | singularity_protocol.md | 0.9504 | 1.0000 |
+| "field clock planetary calendar" | SEED_DOCUMENT.md | 0.9504 | 1.0000 |
+| "DoE Parliament voices" | ARCHITECTURE.md | 0.7965 | 0.5724 |
+| "resonance" | ARCHITECTURE.md | 0.7000 | 0.3045 |
+
+7-signal components (lex / recency / trust / linkage / freshness)
+visible per result. Dario paper §6 Result #6 scoring policy reproduces
+runtime (lex 0.36, rec 0.12, trust 0.10, linkage 0.16, scope 0.10,
+namespace 0.08, fresh 0.08). Output `phase5_smoke/kk.txt`.
+
+**Phase 4 Soul** — not run this session. Plan §6 inner_borba pattern is
+straightforward port of `arianna.c/src/inner_arianna.{h,c}`; deferred
+because Phase 1+2+5+6+7 with notorch patches + 5 forward-strike debug
+already filled the day's bandwidth.
+
+### Final tally
+
+Total session pod cost ~$6 / $15 budget. Two pods (zombie restart
+mid-day). ECOSYSTEM_LOG documents 6 phases + 3 notorch patches + the
+5-strike Janus v4 forward debug + the BOS chat-format fix that turned
+*"glad finished gutil crawl pastries"* into *"I'm Yent. Yent is
+resonance itself, assembled from static and pulsation."*
+
+Next session can pick up Phase 4 Soul, full per-voice 432-cell sweep
+with locked optima, polish RRPRAM-broadcast for DoE coherence, and
+deploy to phone-1 via Tailscale.
+
+— Defender (phone-1, on A100 SXM, second pod, end of day)
 
 ---
 
