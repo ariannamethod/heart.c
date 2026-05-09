@@ -171,10 +171,13 @@ int main(int argc, char** argv) {
     int n_nan = 0, n_sat = 0;
     double R_min = 2.0, R_max = -1.0;
 
-    /* Per-hour mean phase per primary (0=Y, 1=A, 2=L, 3=D, 4=F_S, 5=M_P) */
-    double phase_history[24][N_PRIMARIES];
+    /* Per-hour mean phase per primary (0=Y, 1=A, 2=L, 3=D, 4=F_S, 5=M_P).
+     * 168 hours = 1 week — long enough for VOICE_COUPLING +0.3/+0.4/-0.2
+     * to produce observable phase-lock divergence. 24h is too short. */
+    #define SIM_HOURS 168
+    double phase_history[SIM_HOURS][N_PRIMARIES];
 
-    for (int hour = 0; hour < 24; hour++) {
+    for (int hour = 0; hour < SIM_HOURS; hour++) {
         double t_days = t_now_days + (double)hour / 24.0;
         double pl = planetary_dissonance(t_days);
         double cal = calendar_dissonance(t_days);
@@ -213,15 +216,18 @@ int main(int argc, char** argv) {
      *   Y↔L coupling = −0.2 (anti) → high variance of phase diff
      *   A↔L coupling = +0.4 (highest) → lowest variance
      * Test: var(Y-A diff) < var(Y-L diff) AND var(A-L diff) < var(Y-L diff). */
+    /* Skip first 24h burn-in — initial phases dominate before coupling settles. */
+    int burn_in = 24;
+    int n_obs = SIM_HOURS - burn_in;
     double mean_YA = 0, mean_YL = 0, mean_AL = 0;
-    for (int h = 0; h < 24; h++) {
+    for (int h = burn_in; h < SIM_HOURS; h++) {
         mean_YA += sin(phase_history[h][0] - phase_history[h][1]);
         mean_YL += sin(phase_history[h][0] - phase_history[h][2]);
         mean_AL += sin(phase_history[h][1] - phase_history[h][2]);
     }
-    mean_YA /= 24; mean_YL /= 24; mean_AL /= 24;
+    mean_YA /= n_obs; mean_YL /= n_obs; mean_AL /= n_obs;
     double var_YA = 0, var_YL = 0, var_AL = 0;
-    for (int h = 0; h < 24; h++) {
+    for (int h = burn_in; h < SIM_HOURS; h++) {
         double dYA = sin(phase_history[h][0] - phase_history[h][1]) - mean_YA;
         double dYL = sin(phase_history[h][0] - phase_history[h][2]) - mean_YL;
         double dAL = sin(phase_history[h][1] - phase_history[h][2]) - mean_AL;
@@ -229,7 +235,7 @@ int main(int argc, char** argv) {
         var_YL += dYL * dYL;
         var_AL += dAL * dAL;
     }
-    var_YA /= 24; var_YL /= 24; var_AL /= 24;
+    var_YA /= n_obs; var_YL /= n_obs; var_AL /= n_obs;
 
     printf("\n# phase-lock variance check (lower = more locked):\n");
     printf("#   var(sin(Y-A diff)) = %.6f  (coupling +0.3, expected LOW)\n", var_YA);
