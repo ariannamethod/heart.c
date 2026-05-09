@@ -3,9 +3,12 @@
 # Compiles against vendored notorch sources (../../notorch/ on pod, or
 # ~/arianna/notorch/ via env override). No PyTorch / no Python in train path.
 
-NOTORCH_DIR ?= /workspace/heart.c-runpod/notorch
+NOTORCH_DIR ?= /workspace/notorch
+DARIO_DIR   ?= /workspace/dario
+HEART_TOOLS ?= /workspace/heart.c/tools
+AML_DIR     ?= /workspace/ariannamethod.ai/core
 NT_SRC      = $(NOTORCH_DIR)/notorch.c $(NOTORCH_DIR)/gguf.c
-NT_INC      = -I$(NOTORCH_DIR)
+NT_INC      = -I$(NOTORCH_DIR) -I$(DARIO_DIR) -I$(HEART_TOOLS) -I$(AML_DIR)
 
 UNAME := $(shell uname)
 ifeq ($(UNAME), Darwin)
@@ -45,7 +48,7 @@ LDFLAGS = -lm $(BLAS_LIBS) $(CUDA_LIBS)
 
 .PHONY: all clean
 
-all: train_arianna_lora train_doe_lora
+all: train_arianna_lora train_doe_lora merge_arianna_lora merge_doe_lora infer_resonance
 
 notorch_cuda.o: $(NOTORCH_DIR)/notorch_cuda.cu $(NOTORCH_DIR)/notorch_cuda.h
 	nvcc -O2 -DUSE_CUDA -c $< -o $@
@@ -58,5 +61,23 @@ train_doe_lora: train_doe_lora.c $(NOTORCH_DIR)/notorch.h $(NOTORCH_DIR)/gguf.h 
 	$(CC) $(CFLAGS) -o $@ train_doe_lora.c $(NT_SRC) $(CUDA_OBJ) $(LDFLAGS)
 	@echo "Built: $@ (USE_CUDA=$(USE_CUDA))"
 
+# Mergers — pure C, no notorch tape, only matmul. Build CPU-only with libm.
+merge_arianna_lora: merge_arianna_lora.c
+	$(CC) -O2 -Wall -Wextra -std=c11 -o $@ merge_arianna_lora.c -lm
+	@echo "Built: $@"
+
+merge_doe_lora: merge_doe_lora.c
+	$(CC) -O2 -Wall -Wextra -std=c11 -o $@ merge_doe_lora.c -lm
+	@echo "Built: $@"
+
+# Inference driver for Resonance — links resonance_forward.h (vendored) +
+# notorch.c + gguf.c + ariannamethod.c (AML field overlay).
+infer_resonance: infer_resonance.c
+	$(CC) -O2 -Wall -Wextra -std=c11 $(BLAS_DEFS) \
+	  -I$(NOTORCH_DIR) -I$(DARIO_DIR) -I$(HEART_TOOLS) -I$(AML_DIR) \
+	  -o $@ infer_resonance.c $(NT_SRC) $(AML_DIR)/ariannamethod.c \
+	  -lm $(BLAS_LIBS)
+	@echo "Built: $@"
+
 clean:
-	rm -f train_arianna_lora train_doe_lora notorch_cuda.o
+	rm -f train_arianna_lora train_doe_lora merge_arianna_lora merge_doe_lora infer_resonance notorch_cuda.o
