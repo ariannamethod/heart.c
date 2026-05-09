@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
     };
     int ingested = 0;
     for (int i = 0; docs[i]; i++) {
-        int rc = kk_ingest_file(k, docs[i], "public", "ground");
+        int rc = kk_ingest_file(k, docs[i], "public", "public");
         if (rc > 0) {
             ingested++;
             fprintf(stderr, "[kk] ingested %s (%d chunks)\n", docs[i], rc);
