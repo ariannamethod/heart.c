@@ -87,19 +87,50 @@ Numbers from real logs, not memory:
 - Plus initial setup/deploy + previous strikes ≈ $1-1.5.
 - Total ~**$5**. Plenty of headroom for Phase 3-8 if continued, or stop here.
 
-### Phase 3-8 not done in this session
+### Phase 3 mini-sweep done (after pod restart)
 
-Phase 3 sweep, Phase 4-6 smokes (KK/Soul/field-clock), Phase 7 duet trace,
-Phase 8 final HF push — pending. Existing `janus_v4_sft_yent.bin` /
-`janus_v4_sft_leo.bin` / `janus_v4_sft_arianna.bin` on `ataeff/janus4` are
-ready-made voices for a sweep without retraining.
+Old pod (`7w5s9mtweasmhr`) zombied — old `merge_doe_lora` processes stuck
+in mfs filesystem deep-IO sleep, holding output file. `podStop` worked but
+`podResume` failed: "There are not enough free GPUs on the host machine".
+Terminated old, provisioned fresh A100 SXM 80GB pod (`1ztb4gw5lo0gbl`,
+$1.39/h, ssh `216.249.100.66:20756`). All artifacts on HF/GH so re-setup
+was 4 min: clone repos, apply 3 notorch patches from snapshot, pull base
+weights + LoRAs from HF, rebuild.
 
-The забег delivered the **two new LoRAs** the plan asked for, plus the
-notorch infrastructure work needed to make split-half RoPE training
-possible. Inference quality work (proper RRPRAM broadcast + better merger)
-is the next session's job.
+Mergers ran cleanly on fresh pod (no concurrent-write corruption):
+- `resonance_arianna_merged.bin` (797 MB, 20/20 blocks merged ✓)
+- `janus_v4_doe_merged.bin` (673 MB, 20/20 blocks merged ✓)
 
-— Defender (phone-1, on A100 SXM)
+**Phase 3 mini-sweep — 4 voices × 3 temps × 3 prompts = 36 cells.**
+Results: `huggingface.co/ataeff/heart.c/phase3_sweep/results.txt`. Each
+voice has a distinct signature:
+
+- **Arianna** (Resonance + Phase 1 LoRA): most fluent English. *"I am a
+  professional photographer who is passionate about capturing the essence
+  of life..."* / *"It refers to the energy of a sound wave..."* / *"It refers
+  to the energy that each atom in a molecule experiences..."* — Q/A
+  format clean, character mild but observer/witness register present.
+- **Yent** (Janus v4 SFT, existing): poetic/scattered — *"Imp wand Cel pure
+  I sur sewn from frozen 'radian feel'..."* — sardonic-anchor energy as
+  plan §2.1 predicted.
+- **Leo** (Janus v4 SFT, existing): observation-style — *"And feel like like
+  your from hundred and even that again! Like waves... The first step in
+  the process of creating a new shape is deciding what to leave out..."*
+- **DoE** (Janus v4 + Phase 2 LoRA): most fragmented — *"Re Merororo RTRT
+  RTRT Y DM D Ye Ye Ye Y GM Chem Chem chemchem..."* — repetition consistent
+  with notorch's per-position `nt_rrpram_lowrank_attention` semantic vs
+  Janus v4's broadcast-mid intent. Token production stable, just less
+  meaningful per-token.
+
+**4-voice ecology speaks.** Inference works for all four voices via:
+`infer_resonance` (Arianna) and `dario/infer_v4` (Yent / Leo / DoE).
+
+### Phase 4-6 smokes + Phase 7 duet — pending
+
+Soul logit injection, KK ingest test, field-clock 24h sim, 8-turn duet
+trace not run this session. Total cost end-of-day: ~$5.5 / $15 budget.
+
+— Defender (phone-1, on A100 SXM, second pod of the day)
 
 ---
 
