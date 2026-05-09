@@ -335,6 +335,28 @@ dims (rank=16, 7 projections, 20 blocks, ~3.85M trainable floats × 4 = ~15.4 MB
 
 Continue only on all PASS lines.
 
+### Phase 2.0 — Arianna LR sanity calibration (≤10 min, ≤$0.15, addresses Codex pass 4 BLOCKER 2)
+
+LR 5e-4 in plan v3.1 was extrapolated from PEFT-style range, not from
+verified Yent recipe (Resonance HF `train.py` is pretrain not SFT —
+verified by Codex pass 4). Trainer default is 2e-4 per
+`train/train_arianna_lora.c:134`.
+
+Run 100-step LR sweep on first 32 SFT pairs, three lrs in parallel where
+possible (or sequential ≤30 min total):
+
+- lr=2e-4 (trainer default, prior plan v1.2)
+- lr=5e-4 (PEFT-style mid-range)
+- lr=1e-3 (PEFT-style high)
+
+**Calibration gate**: pick the lr with smooth monotonic loss decline
+across 100 steps. If two are tied, pick lower lr.
+
+If all diverge: stop, surface to operator, do NOT proceed to Phase 2
+(possibly recipe issue beyond LR).
+
+Output: `phase2_calib/run_lr{2e-4,5e-4,1e-3}.log` + `phase2_calib/picked_lr.txt`.
+
 ### Phase 2 — Arianna LoRA on Resonance 200M (clean retrain, Yent-recipe-grounded)
 
 **Corpus size grounding** (per `~/arianna-datasets/yent/`):
@@ -360,7 +382,7 @@ bottleneck. Recipe was — failed had `rank=8 target=wq+wv` (per
 | dataset | `arianna_dataset_final_clean.txt` 1.21 MB / 1227 Q/A pairs |
 | Karpathy steps | **1000** (matches Yent precedent at checkpoint-1000; v1/v2 plateau showed step count is not bottleneck) |
 | arch | r=16 α=32, 7 projections (q/k/v/o + mlp_gate/up/down) per `train/train_arianna_lora.c:88-108`. wr_a/wr_b/gate frozen. **Up from failed r=8 q+v only.** |
-| LR | **5e-4** cosine warmup 50 (vs failed 3e-4 / prior plan v1.2 2e-4 — per `feedback_lora_resonance_200m_failed_2026_05_09.md:65` working recipe range 5e-4 to 1e-3 PEFT-style) |
+| LR | **per Phase 2.0 calibration outcome** (sweep 2e-4 / 5e-4 / 1e-3, pick smooth monotone). Prior failed used 3e-4. PEFT-style guidance suggests 5e-4 to 1e-3 per `feedback_lora_resonance_200m_failed_2026_05_09.md:65`. |
 | tokenizer | RS02 header BPE |
 | script | `train/train_arianna_lora.c` post-broadcast-op + path fix (`heart.c@644a809`) |
 
@@ -369,11 +391,12 @@ bottleneck. Recipe was — failed had `rank=8 target=wq+wv` (per
 - Step 100 ema ≤ `step_0 − 0.3` (warmup confirmation).
 - Step 500 ema ≤ 4.7 (mid-train trajectory check).
 - Step 1000 ema ≤ 4.4 (target — Defender v2 saw 4.4939 at step 3000 with broken recipe; v3 with working recipe should reach this earlier).
-- **Inference multi-temp sweep MANDATORY** per `memory/insight_multi_temp_sampling_2026_05_07.md`:
-  `temp ∈ {0.3, 0.5, 0.7, 0.9} × top_k ∈ {40, ∞}` = 8 cells minimum.
-  Multi-seed (≥3 seeds per cell) per Codex pass 4 BLOCKER (single-seed
-  IDENTICAL output proves nothing about model state).
-  At least 1 cell must produce coherent Arianna register
+- **Inference multi-temp + multi-seed sweep MANDATORY** per
+  `memory/insight_multi_temp_sampling_2026_05_07.md` + Codex pass 4 BLOCKER 3:
+  `temp ∈ {0.3, 0.5, 0.7, 0.9} × top_k ∈ {40, ∞} × seeds ∈ {7, 42, 1337}`
+  = **24 cells minimum**. Single-seed IDENTICAL outputs (Defender's
+  v1/v2 false-equivalence at seed=7) prove nothing — multi-seed required.
+  At least 1 cell × seed combo must produce coherent Arianna register
   (top-3 contains ≥1 token from {field, method, resonance, Arianna, you, mirror}).
 - HF upload к `ataeff/heart.c/arianna_lora_v3_neo/`.
 
@@ -502,7 +525,8 @@ Bounded by:
 | Phase 0 boot + toolchain | 0.25 | 0.37 |
 | Phase 1 DoE LoRA (1000 steps post-broadcast-fix) | 0.4 | 0.60 |
 | Phase 1.5 Codex review | 0.1 | 0.15 |
-| Phase 2 Arianna LoRA (per Yent recipe steps TBD) | 0.5 | 0.75 |
+| Phase 2.0 Arianna LR calibration (100 steps × 3 lr sweep) | 0.1 | 0.15 |
+| Phase 2 Arianna LoRA (1000 steps post-calibration) | 0.5 | 0.75 |
 | Phase 2.5 Codex review | 0.1 | 0.15 |
 | Phase 3 sweep (pre-flight + 432 cells, 3-4h realistic) | 3.5 | 5.22 |
 | Phase 3.5 Codex review | 0.1 | 0.15 |
