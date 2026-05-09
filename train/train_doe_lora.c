@@ -494,20 +494,15 @@ static int forward(JanusBase* base, LoRA* lr, JanusConfig* cfg,
         int v  = proj_with_lora(lr, bl, LP_V, blk->cv_idx, xn, T_input);
         int vr = nt_seq_linear(blk->wvr_idx, xn, T_input);
 
-        /* RoPE — Janus v4 uses nanochat split-half base 100000 (infer_v4.c:35).
-         * notorch's nt_rope_freq convention may differ; pass freq_base 100000
-         * so at least the frequencies match. Any rotation-direction mismatch
-         * affects all heads symmetrically and LoRA learns around it. */
-        q = nt_rope_freq(q, T_input, D, 100000.0f);
-        k = nt_rope_freq(k, T_input, D, 100000.0f);
-
-        /* QK-norm (per-head RMSNorm + scale 1.2 — infer_v4.c:62 qk_norm).
-         * Reshape [T, E=H*D] as [T*H, D] for nt_seq_rmsnorm so each head
-         * gets its own RMS denominator. Memory layout is identical. */
-        q = nt_seq_rmsnorm(q, -1, T_input * H, D);
-        q = nt_scale(q, 1.2f);
-        k = nt_seq_rmsnorm(k, -1, T_input * H, D);
-        k = nt_scale(k, 1.2f);
+        /* DIAG strike 3: skip RoPE + QK-norm to bisect.
+         * Janus v4 trains with split-half RoPE (infer_v4.c:35). notorch's
+         * nt_rope_freq uses even/odd (notorch.c:3823 out[base+2i]/[2i+1]).
+         * Mismatch ⇒ every attention score wrong. Disable to verify culprit. */
+        /* q = nt_rope_freq(q, T_input, D, 100000.0f);
+         * k = nt_rope_freq(k, T_input, D, 100000.0f);
+         * q = nt_seq_rmsnorm(q, -1, T_input * H, D); q = nt_scale(q, 1.2f);
+         * k = nt_seq_rmsnorm(k, -1, T_input * H, D); k = nt_scale(k, 1.2f);
+         */
 
         /* Content attention: full MHA (Janus has KV=H, no GQA) */
         int content = nt_mh_causal_attention(q, k, v, T_input, D);
