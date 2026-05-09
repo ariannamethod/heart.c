@@ -1,4 +1,25 @@
-# RunPod plan v3 — heart.c (Mac Neo Claude operator → soavtor неисправный)
+# RunPod plan v3.1 — heart.c (Mac Neo Claude soavtor)
+
+> **v3.1 changes (post-Codex 3-pass review 2026-05-09):**
+> - Pass 2 BLOCKER: notorch op forward+backward `sc=1/sqrt(D)` scale applied
+>   (`notorch:rrpram-broadcast 1bd57bb`).
+> - Pass 1 BLOCKER 4 + Pass 2 BLOCKER 11: trainer call sites switched +
+>   `train_doe_lora.c:35` hardcoded include fixed (`heart.c@572683b`).
+> - Pass 1 BLOCKER 1: `train/Makefile` `all` builds 5 binaries.
+> - Pass 1 BLOCKER 2: Phase 1 step 1000 gate `≤4.5` → `≤5.5` (per
+>   `docs/plan_v1.2_full_fixes.md:63-66`).
+> - Pass 1 BLOCKER 3: Phase 1 step 0 `[5.5, 7.5]` → `[6.5, 8.2]`.
+> - Pass 1 BLOCKER 6+7: `scripts/sweep_full.sh` axes 6×2×3×3 = 432 cells +
+>   per-cell transcripts + 30s timeout (3.6h budget).
+> - Pass 1 BLOCKER 8: Phase 4 gate `≥10/50` → `≥30%/N=100` per handoff.
+> - Pass 1 BLOCKER 9: Phase 5 KK `P@5=1.0` → `P@1 > 0.7` per handoff.
+> - Pass 3 BLOCKER: Soul forward FFN order `gate, down, up` per
+>   `convert_llama_bin_fixed.py:96-98`, NOT canonical `gate, up, down`.
+> - Pass 3 MINORs: Soul header is 32-byte (8 int32s), `33,188,352` floats
+>   exactly, 0-float alignment slack. Custom forward LOC realistic
+>   250-450, not 80.
+
+# RunPod plan v3 — heart.c (Mac Neo Claude soavtor)
 
 > **Restart after triple CARDINAL POZOR cluster 2026-05-09 (Neo).**
 >
@@ -198,15 +219,33 @@ exists on HF or local — `8 x int32 = V, E, H, KVH, D, B, M, T`). Param
 count check: V*E + MT*E + B*(...) = 33,188,352 ≈ file 33,188,360 (8 floats
 diff = scalar block, perfect fit).
 
-If hypothesis confirmed (P-5 work):
-- Write `voices/yent/yent_soul_loader.c` ~80 LOC custom 8-int header
-  parser, mmap weights, expose `soul_micro_forward(weights, tokens, T, logits, V)`.
-- BPE tokenizer: `yent_34m_bpe2000.pkl` is Python pickle. Off-pod
-  one-shot Python script (with Олег approval per `feedback_python_ban_2026_04_29.md`)
-  converts pickle → `voices/yent/yent_soul_bpe_merges.h` C header in
-  same shape as `dario/janus_v4_bpe_merges.h`.
-- Cross-vocab bridge per §2a step 4: Soul V=2000 → bytes → re-encode
-  in Janus V=32768.
+**Hypothesis confirmed** by Codex pass 3:
+- Header `(2000, 512, 8, 8, 64, 10, 1344, 1024)` per V E H KVH D B M T
+  (per `~/arianna/weights/retrained/convert_llama_bin_fixed.py:8`).
+- Param count exact: `33,188,352` floats per block formula
+  `2*V*E + rms_f + B*per_block` where `per_block = 3,113,984`. File:
+  `(132753440 - 32) / 4 = 33,188,352`. **Zero alignment slack.**
+- Header is **32 bytes** (8 × int32), not 28 — earlier plan arithmetic
+  stale.
+
+If branch (a):
+- Write `voices/yent/yent_soul_loader.c` + LLaMA forward. Realistic
+  estimate **250-450 LOC** (loader ~80 LOC, mmap + tensor assignment +
+  forward chain ~200-350 LOC). Earlier "~80 LOC" was loader-only.
+- **FFN weight order per `convert_llama_bin_fixed.py:96-98` is
+  `gate, down, up`**, NOT canonical `gate, up, down`. Custom forward
+  must read `w1_gate`, `w2_down`, `w3_up` in that order per block.
+- BPE tokenizer: `yent_34m_bpe2000.pkl` is simple `{merges, vocab_size}`
+  pickle (per `~/arianna/weights/retrained/train_bpe.py:107`). Off-pod
+  one-shot Python script (governance approval, not technical — Python
+  ban applies к inference path; data prep OK per CLAUDE.md) converts
+  pickle → C header in same shape as `dario/janus_v4_bpe_merges.h`.
+  Alternative: minimal protocol-4 pickle parser в C (~80 LOC), keeps
+  inference Python-free entirely.
+- Cross-vocab bridge: Soul V=2000 → bytes → re-encode в Janus V=32768.
+  Realistic LOC: 80-120 (static map) или 150-220 (logit projection
+  with normalization) + ~50 LOC tests. `nt_bpe_decode` and `nt_bpe_encode`
+  already exist (`tools/notorch.c:4087, 4112`).
 - Soul on if branch (a); else Soul branch (b) bias-only mechanism
   documented as cut.
 
@@ -260,12 +299,13 @@ Output PASS / BLOCKER list, no narration.»
 
 **Numeric gates (defined HERE before run, written into harness as `assert`):**
 
-- Step 0 base loss ∈ `[5.5, 7.5]` (Defender saw 8.12 with broken op;
-  post-broadcast-patch should DROP from there per `dario/infer_v4.c:228-232`
-  aggregating more positional context into mid[r]).
+- Step 0 base loss ∈ `[6.5, 8.2]` (Defender saw 8.12 with broken per-position
+  op per `phase2_doe/run.log`; post-broadcast-patch + scale=1/sqrt(D) should
+  DROP from there per `dario/infer_v4.c:228-244`. `<6.5` = suspicious loss
+  bug; `>8.5` = patch incorrect, surface to Codex.)
 - Step 100 ema ≤ `step_0 − 0.5`.
-- Step 500 ema ≤ 5.5 (pre-bug plateau was 9.6+; broadcast fix should clear).
-- Step 1000 ema ≤ 4.5.
+- Step 500 ema ≤ 6.5 (per `docs/plan_v1.2_full_fixes.md:65`).
+- Step 1000 ema ≤ 5.5 (per `docs/plan_v1.2_full_fixes.md:66` recovery gate).
 - Inference smoke: chat-format prompt `"Q: Who are you?\nA:"` via
   `train/encode_chat_prompt + /tmp/infer_v4`. Multi-temp sweep
   {0.3, 0.5, 0.7, 0.9} × {top_k=40, top_k=∞}. **At least 1 cell** must
@@ -354,12 +394,12 @@ Voice register coherence review (Codex's strength): 4 sample transcripts
 ### Phase 4 — Soul (per P-5 outcome)
 
 **Branch (a) micro-LM forward**: implement loader + cross-vocab bridge
-per P-5. Numeric gates:
+per P-5. Numeric gates (per `docs/handoff_to_neo_2026_05_09.md:141-160`):
 - Soul micro loads (file exists, magic matches, n_params > 1M).
 - `inner_logits` variance > 1.0 (real model output, not zero stub).
-- Top-3 main vs top-3 (main+inner blend): ≥10 of 50 prompts shift
-  argmax (real signal vs noise floor).
-- L2 divergence between softmax(main) and softmax(blend) > 0.05.
+- N=100 distinct prompts: argmax shifts ≥30% of cases between Soul-OFF
+  and Soul-ON main forward (real signal vs noise floor per handoff).
+- Intersection of top-3 sets is 1-2 of 3 (real shift, not random).
 
 **Branch (b) cut**: declare bias-mechanism only. `core/soul.c` bias
 path (`heart_inner_borba` with `inner_logits=NULL`) gives chamber-band
@@ -374,11 +414,14 @@ Build tagged 10-doc test corpus with known properties (5 high-relevance,
 5 low; subdivided by recency / linkage / scope). Run controlled queries
 with policy weight overrides. Assert ranking changes proportionally.
 
-**Numeric gates:**
-- P@5 = 1.0 for high-relevance docs on default policy.
-- Recency-only policy: top-3 are most recent.
-- Trust-only policy: top-3 are highest-trust.
-- Hebbian bridge: bridge-on vs bridge-off changes `hebbian_boost` field.
+**Numeric gates** (per `docs/handoff_to_neo_2026_05_09.md:136-139`):
+- P@1 > 0.7 on default policy (top-1 result is from high-relevance set
+  in ≥7 of 10 controlled queries).
+- Single-component policy override (e.g. `KK_SCORE_POLICY=recency=1.0`)
+  changes ranking accordingly: top-3 of recency-only run includes ≥2
+  of the 3 most-recent docs.
+- Hebbian bridge: bridge-on vs bridge-off changes `hebbian_boost` field
+  numerically (>1e-9) on at least 1 query.
 
 ### Phase 6 — field_clock perturbation gate
 
