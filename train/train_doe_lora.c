@@ -68,7 +68,7 @@ typedef struct {
 typedef struct {
     int resid_l_idx;    /* [B] residual lambda per layer */
     int x0_l_idx;       /* [B] x0 lambda per layer */
-    int smear_l_idx;    /* [1] (loaded but smear skipped during training) */
+    int smear_l_idx;    /* [1] frozen tape param (smear applied pre-tape in make_embedding_lookup) */
     int backout_l_idx;  /* [1] */
     int wte_idx;        /* [V, E] */
     int head_idx;       /* [V, E] */
