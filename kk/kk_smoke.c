@@ -20,10 +20,39 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
+
+/* Phase 5 verification — assert published Dario §6 weights at 1e-6 */
+static int verify_dario_section_6_policy(void) {
+    const char* names[7] = {
+        "lexical", "recency", "trust", "linkage",
+        "scope", "namespace", "freshness"
+    };
+    const double expected[7] = { 0.36, 0.12, 0.10, 0.16, 0.10, 0.08, 0.08 };
+    double computed[7];
+    kk_get_default_weights(computed);
+    int pass = 0;
+    printf("\n=== Dario §6 7-signal policy verification (1e-6 tolerance) ===\n");
+    for (int i = 0; i < 7; i++) {
+        double diff = fabs(computed[i] - expected[i]);
+        int ok = diff < 1e-6;
+        printf("  signal=%-9s computed=%.6f  expected=%.6f  diff=%.2e  %s\n",
+               names[i], computed[i], expected[i], diff, ok ? "PASS" : "FAIL");
+        if (ok) pass++;
+    }
+    double total = 0;
+    for (int i = 0; i < 7; i++) total += computed[i];
+    printf("  total=%.6f (must = 1.000000): %s\n",
+           total, fabs(total - 1.0) < 1e-6 ? "PASS" : "FAIL");
+    printf("  policy verification: %d/7 weights match\n", pass);
+    return (pass == 7) && (fabs(total - 1.0) < 1e-6);
+}
 
 int main(int argc, char** argv) {
     const char* db = (argc > 1) ? argv[1] : "/tmp/heart_kk.db";
     const char* doc_dir = (argc > 2) ? argv[2] : "/workspace/heart.c-runpod/heart.c";
+
+    int policy_pass = verify_dario_section_6_policy();
 
     /* delete any existing DB so the smoke is reproducible */
     unlink(db);
@@ -79,5 +108,7 @@ int main(int argc, char** argv) {
 
     kk_close(k);
     fprintf(stderr, "\n[kk] smoke complete\n");
-    return 0;
+    printf("\n=== verification gate: Dario §6 policy = %s ===\n",
+           policy_pass ? "PASS" : "FAIL");
+    return policy_pass ? 0 : 1;
 }
