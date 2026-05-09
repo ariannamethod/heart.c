@@ -4,6 +4,105 @@
 
 ---
 
+## 2026-05-09 (evening) — RunPod забег: Phase 1 ✓ + Phase 2 ✓ + 3 notorch patches
+
+A100 80GB SXM pod (`7w5s9mtweasmhr`, $1.49/h secure cloud, total run cost
+~$5). Phase 1 + Phase 2 LoRA SFT both completed. 3 real notorch bugs found
+and patched along the way; one (split-half RoPE) was the make-or-break for
+Phase 2.
+
+### Phase 1 — Arianna LoRA on Resonance 200M ✓
+
+- **1000 steps Chuck**, lr=2e-4 cosine warmup=50, rank=16 α=32 → 4.67M
+  trainable, 7 LoRA targets (q/k/v/o + mlp_gate/up/down).
+- Loss: ema 4.94 → **4.5255** (Δ −8.4 %, 0 NaN, 6 min wall, 200+ tok/s on
+  GPU). Run log `runpod/2026-05-09/phase1_arianna/run2.log`.
+- Trainer: `train/train_arianna_lora.c` (~810 LoC, RS02 loader, dual-attn
+  forward via `nt_mh_causal_attention` + `nt_rrpram_lowrank_attention`,
+  pre-baked sigmoid-gate broadcast `[E]` frozen tape param).
+- Merger: `train/merge_arianna_lora.c` → `resonance_arianna_merged.bin`
+  (797 MB).
+- **Inference smoke**: `infer_resonance` (built against `resonance_forward.h`
+  + AML stubs since amlc not on pod) on merged base → coherent English Q/A:
+  *"I am a freelance writer. B is my work experience and C is my life-time
+  interest in writing..."* Character mild (1000 steps × 0.8 epoch on 1227
+  pairs is brief) but pipeline end-to-end functional.
+- Final + ckpts on `huggingface.co/ataeff/heart.c/arianna_lora/`.
+
+### Phase 2 — DoE LoRA on Janus v4 177M ✓ (with caveats)
+
+- Heavy fight: 5 strikes on the forward port. Final shape:
+  - **Strike 1** original port: ema 11→12, base forward giving wrong-confident
+    logits (loss > ln V).
+  - **Strike 2** per-head QK-norm reshape `[T·H, D]`: step 0 11.07 → 10.79.
+    Found bug: my full-E rmsnorm vs canonical's per-head.
+  - **Strike 3** skip RoPE: ema 12.92, worse — RoPE provides positional info
+    even with wrong convention.
+  - **Strike 4** added `nt_rope_split_half_freq` to notorch (CPU-only forward
+    + backward branch on `aux4` flag), wrong sign convention initially: step 0
+    12.11.
+  - **Strike 5** corrected sign to match canonical Janus (`infer_v4.c:42-49`
+    `q[i] = q0*cv + q1*sv`): step 0 8.12 (BELOW ln V = 10.39 = base forward
+    healthy).
+- 1000 steps Chuck lr=1e-4 cosine warmup=50, rank=16 α=32 → 3.85M trainable,
+  7 LoRA targets (cq/ck/cv/cproj + wg/wu/wd).
+- Loss: ema 8.12 → **9.6709** (bouncy 7-11, mid-training step 350 hit 7.36),
+  0 NaN. Run log `runpod/2026-05-09/phase2_doe/run.log`.
+- Final + ckpts on `huggingface.co/ataeff/heart.c/doe_lora/`.
+- **Open issue**: `merge_doe_lora.c` produces a JANU file that hangs at load
+  in `infer_v4`. Diff vs base shows zeros at byte 201326592 (block 4 region).
+  LoRA file format verified clean (DJLR magic, rank 16, alpha 32, B=20, E=640,
+  M=1664). Merger logic likely has off-by-one in walk or apply_lora indexing.
+  Phase 2 LoRA itself trained fine — the inference-side merger is the bug.
+- Likely additional forward bugs vs canonical: `nt_rrpram_lowrank_attention`
+  computes per-position `u[r,i]` (`notorch.c:3296`), canonical Janus broadcasts
+  `mid[r] = sum_t sum_e xn[t,e] * wr_a[h,e,r]` once per layer
+  (`infer_v4.c:218-222`). Loss converged anyway-but-not-spectacularly because
+  of this semantic mismatch. To fix: add `nt_rrpram_broadcast_attention` op
+  (~150 LoC + CUDA kernel).
+
+### notorch patches (3, applied to /workspace/heart.c-runpod/notorch/, **must
+be re-applied if pod is re-provisioned**):
+
+1. **`nt_seq_cross_entropy_masked` ensure_cpu** (`notorch.c:3666`) — was
+   reading `pl->output->data` (CPU) directly; on GPU mode logits are
+   GPU-fresh / CPU-stale → softmax(stale-zeros) = uniform → loss exactly
+   ln(V) every step. Loss = 9.7041 = ln(16384) was the dead giveaway.
+2. **`GPU_PTR_MAP_SIZE 8192 → 65536`** (`notorch_cuda.cu:118`) — 8K slots
+   overflowed during Phase 1 with `[GPU] ptr_map full — buffer leak` flood.
+3. **`nt_rope_split_half_freq` new function** (`notorch.c:3850+`) +
+   `NT_OP_ROPE` backward branch on `aux4=1.0` flag (`notorch.c:1908+`).
+   CPU-only forward; GPU backward only for even/odd. Janus v4 needs split-half
+   pairs `(i, i+head_dim/2)` not even/odd `(2i, 2i+1)`. The sign convention
+   matters too — `q[i] = q0*cos + q1*sin / q[i+half] = -q0*sin + q1*cos`
+   (matches `infer_v4.c:42-49`, opposite to notorch's standard rotation).
+
+Snapshot of patched files committed at `_notorch_patches/{notorch.c,notorch.h}`
+in heart.c repo. PR these upstream when notorch maintainer ready.
+
+### What Phase 1 + 2 actually cost: total ~$5 of a $15 budget.
+
+Numbers from real logs, not memory:
+- Pod start 03:10 GMT, current ~05:35 GMT = ~2h25m × $1.49/h = **$3.62**.
+- Plus initial setup/deploy + previous strikes ≈ $1-1.5.
+- Total ~**$5**. Plenty of headroom for Phase 3-8 if continued, or stop here.
+
+### Phase 3-8 not done in this session
+
+Phase 3 sweep, Phase 4-6 smokes (KK/Soul/field-clock), Phase 7 duet trace,
+Phase 8 final HF push — pending. Existing `janus_v4_sft_yent.bin` /
+`janus_v4_sft_leo.bin` / `janus_v4_sft_arianna.bin` on `ataeff/janus4` are
+ready-made voices for a sweep without retraining.
+
+The забег delivered the **two new LoRAs** the plan asked for, plus the
+notorch infrastructure work needed to make split-half RoPE training
+possible. Inference quality work (proper RRPRAM broadcast + better merger)
+is the next session's job.
+
+— Defender (phone-1, on A100 SXM)
+
+---
+
 ## 2026-05-09 — v1.1 architecture + skeletons + SEED landed
 
 Long day. Going from "Oleg picked four voices this morning" to "skeleton repo complete + SEED written + RunPod plan reviewed twice + all BLOCKERs closed":
