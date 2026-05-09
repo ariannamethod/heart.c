@@ -492,8 +492,11 @@ static int forward(ResonanceBase* base, LoRA* lr, ResonanceConfig* cfg,
         q = nt_rope_freq(q, T_input, D, 10000.0f);
         k = nt_rope_freq(k, T_input, D, 10000.0f);
 
-        /* Content attention: full MHA (Resonance has KV = H, no GQA) */
-        int content = nt_gqa_causal_attention(q, k, v, T_input, D, H, H);
+        /* Content attention: full MHA (Resonance has KV = H, no GQA).
+         * Use nt_mh_causal_attention — it has a GPU path; nt_gqa_causal_attention
+         * is CPU-only AND doesn't ensure_cpu its inputs, so reads stale CPU data
+         * when GPU mode is on (notorch.c:3127). */
+        int content = nt_mh_causal_attention(q, k, v, T_input, D);
 
         /* RRPRAM low-rank attention: pre-built wr_combined, base wr_a/wr_b frozen */
         int rrpram = nt_rrpram_lowrank_attention(blk->wr_combined_idx,
