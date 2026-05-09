@@ -19,13 +19,15 @@
 #include <math.h>
 #include <time.h>
 
-/* Klaus-heritage constants */
+/* Klaus-heritage constants — direct from klaus.c:135-140, 1385 */
 #define PI                3.14159265358979323846
 #define J2000_EPOCH       946728000.0    /* 2000-01-01 12:00 UTC unix */
-#define DAYS_PER_YEAR     365.25
-#define DAYS_PER_HEBREW   354.367        /* Hebrew calendar lunar year */
-#define METONIC_CYCLE     19.0           /* Hebrew leap-year cycle */
-#define MAX_UNCORRECTED   33.0           /* days drift threshold (klaus.c:138) */
+#define ANNUAL_DRIFT      11.25f         /* days/year drift Hebrew vs Gregorian */
+#define GREGORIAN_YEAR    365.25f
+#define METONIC_YEARS     19
+#define METONIC_LEAPS     7              /* leap years per cycle */
+#define MAX_UNCORRECTED   33.0f
+static const int METONIC_LEAP[] = {3, 6, 8, 11, 14, 17, 19};
 
 /* 6 planets, mean anomaly per day at J2000, per Klaus klaus.c:1432+ */
 static const double planet_period_days[6] = {
@@ -54,16 +56,27 @@ static double planetary_dissonance(double t_days_since_J2000) {
     return 1.0 - R;   /* dissonance = 1 - order */
 }
 
-/* calendar_dissonance — Hebrew-Gregorian Metonic drift, klaus.c:1397+ */
+/* calendar_dissonance — Hebrew-Gregorian Metonic drift, lifted from
+ * klaus.c:1397-1417 verbatim (with epoch = J2000). */
 static double calendar_dissonance(double t_days_since_J2000) {
-    double greg_year = t_days_since_J2000 / DAYS_PER_YEAR;
-    double hebrew_year = t_days_since_J2000 / DAYS_PER_HEBREW;
-    double drift = (greg_year - hebrew_year) * DAYS_PER_HEBREW;
-    /* Metonic correction: 19-year cycle ≈ exact realign */
-    double cycles = floor(drift / (DAYS_PER_HEBREW * METONIC_CYCLE / 12.0));
-    double corrected = drift - cycles * (DAYS_PER_HEBREW * METONIC_CYCLE / 12.0);
-    if (corrected < 0) corrected += DAYS_PER_HEBREW * METONIC_CYCLE / 12.0;
-    return fmin(corrected / MAX_UNCORRECTED, 1.0);
+    if (t_days_since_J2000 <= 0) return 0.5;
+    int days = (int)t_days_since_J2000;
+    float years = (float)days / GREGORIAN_YEAR;
+    float base_drift = years * ANNUAL_DRIFT;
+
+    int full_cycles = (int)(years / METONIC_YEARS);
+    float corrections = (float)(full_cycles * METONIC_LEAPS) * 30.0f;
+    float partial = fmodf(years, (float)METONIC_YEARS);
+    int year_in_cycle = (int)partial + 1;
+    for (int i = 0; i < METONIC_LEAPS; i++) {
+        if (METONIC_LEAP[i] <= year_in_cycle)
+            corrections += 30.0f;
+    }
+    float drift = base_drift - corrections;
+    float raw = fabsf(fmodf(drift, MAX_UNCORRECTED)) / MAX_UNCORRECTED;
+    if (raw < 0.0f) raw = 0.0f;
+    if (raw > 1.0f) raw = 1.0f;
+    return (double)raw;
 }
 
 /* Schectman γ(t) coupling — klaus.c:1814 */
