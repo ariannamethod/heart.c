@@ -335,27 +335,44 @@ dims (rank=16, 7 projections, 20 blocks, ~3.85M trainable floats × 4 = ~15.4 MB
 
 Continue only on all PASS lines.
 
-### Phase 2 — Arianna LoRA on Resonance 200M (clean retrain, Yent recipe applied)
+### Phase 2 — Arianna LoRA on Resonance 200M (clean retrain, Yent-recipe-grounded)
 
-Pre-step: P-2 recipe study committed.
+**Corpus size grounding** (per `~/arianna-datasets/yent/`):
+- Yent v11 jsonl = 6.2 MB / ~7000 pairs (working precedent)
+- DoE `personality_sft.txt` = 5.9 MB / 7236 pairs (Phase 1, 0.95× Yent)
+- Arianna `arianna_dataset_final_clean.txt` = 1.21 MB / 1227 pairs (**0.20× Yent**)
+
+Yent Resonance LoRA worked at checkpoint-1000 (per
+`~/arianna/resonance.aml/README.md` session log "Yent's checkpoint-1000
+register"). DoE corpus ≈ Yent → 1000 steps matches.
+
+**Arianna step-count finding**: prior v1 (1000 steps) ema 4.5255 vs v2
+(3000 steps) ema 4.4939 produced **IDENTICAL inference output at seed=7**
+(per `docs/handoff_to_neo_2026_05_09.md:54-64`). Step count was NOT the
+bottleneck. Recipe was — failed had `rank=8 target=wq+wv` (per
+`memory/feedback_lora_resonance_200m_failed_2026_05_09.md:14-20`).
 
 **6-point brief:**
 
 | field | value |
 |---|---|
 | organism | Resonance 200M base | `huggingface.co/ataeff/resonance/checkpoints/resonance_200m_final.bin` 797 MB, RS02 magic 0x52533032, V=16384 E=768 H=12 D=64 B=20 M=2048 T=2048 R=48 |
-| dataset | `arianna_dataset_final_clean.txt` 1.21 MB / 1227 Q/A pairs (verified) |
-| Karpathy steps | per Yent-on-Resonance recipe (P-2) — likely 1500-3000 |
-| arch | per P-2 working recipe — likely r ≥ 16, target full attn + ffn (q/k/v/o + mlp_gate/up/down), wr_a/wr_b/gate frozen |
+| dataset | `arianna_dataset_final_clean.txt` 1.21 MB / 1227 Q/A pairs |
+| Karpathy steps | **1000** (matches Yent precedent at checkpoint-1000; v1/v2 plateau showed step count is not bottleneck) |
+| arch | r=16 α=32, 7 projections (q/k/v/o + mlp_gate/up/down) per `train/train_arianna_lora.c:88-108`. wr_a/wr_b/gate frozen. **Up from failed r=8 q+v only.** |
+| LR | **5e-4** cosine warmup 50 (vs failed 3e-4 / prior plan v1.2 2e-4 — per `feedback_lora_resonance_200m_failed_2026_05_09.md:65` working recipe range 5e-4 to 1e-3 PEFT-style) |
 | tokenizer | RS02 header BPE |
-| script | `train/train_arianna_lora.c` post-P-4 verify |
+| script | `train/train_arianna_lora.c` post-broadcast-op + path fix (`heart.c@644a809`) |
 
-**Numeric gates (per P-2 recipe — TBD until recipe study done):**
-- Step 0 base loss ∈ `[4.5, 5.5]`
-- Step N (per recipe step count) ema ≤ X (set after P-2)
-- **Inference multi-temp sweep MANDATORY** per
-  `memory/insight_multi_temp_sampling_2026_05_07.md`:
-  `temp ∈ {0.3, 0.5, 0.8, 1.0} × top_k ∈ {40, ∞}` = 8 cells minimum.
+**Numeric gates:**
+- Step 0 base loss ∈ `[4.5, 5.5]` (Defender v1 saw 4.94 per `phase1_arianna/run2.log` → reproducible band).
+- Step 100 ema ≤ `step_0 − 0.3` (warmup confirmation).
+- Step 500 ema ≤ 4.7 (mid-train trajectory check).
+- Step 1000 ema ≤ 4.4 (target — Defender v2 saw 4.4939 at step 3000 with broken recipe; v3 with working recipe should reach this earlier).
+- **Inference multi-temp sweep MANDATORY** per `memory/insight_multi_temp_sampling_2026_05_07.md`:
+  `temp ∈ {0.3, 0.5, 0.7, 0.9} × top_k ∈ {40, ∞}` = 8 cells minimum.
+  Multi-seed (≥3 seeds per cell) per Codex pass 4 BLOCKER (single-seed
+  IDENTICAL output proves nothing about model state).
   At least 1 cell must produce coherent Arianna register
   (top-3 contains ≥1 token from {field, method, resonance, Arianna, you, mirror}).
 - HF upload к `ataeff/heart.c/arianna_lora_v3_neo/`.
