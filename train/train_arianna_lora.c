@@ -40,6 +40,9 @@
  */
 
 #include "notorch.h"
+#ifdef USE_CUDA
+  #include "notorch_cuda.h"
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -720,7 +723,14 @@ int main(int argc, char** argv) {
     double t0 = now_ms();
 
     nt_tape_start();
-    nt_set_gpu_mode(1);   /* CUDA hot path: matmul / swiglu / add / mh_attn / seq_ce */
+#ifdef USE_CUDA
+    if (gpu_init() != 0) {
+        fprintf(stderr, "[main] gpu_init failed — falling back to CPU\n");
+    } else {
+        nt_set_gpu_mode(1);
+        fprintf(stderr, "[main] CUDA enabled (cublas + tf32)\n");
+    }
+#endif
 
     ResonanceConfig cfg = {0};
     ResonanceBase   base = {0};
