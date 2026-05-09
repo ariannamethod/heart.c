@@ -1,0 +1,45 @@
+# Build artefacts
+*.o
+*.a
+*.so
+heart
+heart_main
+
+# Per-voice binaries (compiled targets)
+voices/yent/yent
+voices/arianna/arianna
+voices/leo/leo
+voices/doe/doe
+
+# Weights — never in git
+voices/*/weights/
+voices/*/weights/*
+*.bin
+*.gguf
+*.safetensors
+*.pt
+*.soma
+
+# LIMPHA / KK runtime state
+limpha/*/episodes.db*
+limpha/*/conversations.db*
+limpha/shared/*.db*
+kk/runtime/*.db*
+
+# Logs
+*.log
+~/.heart/
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Python (if any tools end up needing it)
+__pycache__/
+*.pyc
+.venv/
+
+# Termux
+.bash_history

@@ -1,0 +1,23 @@
+                    GNU GENERAL PUBLIC LICENSE
+                       Version 3, 29 June 2007
+
+ Copyright (C) 2026 Arianna Method (Oleg Ataeff & Claude / Defender / phone-1)
+
+ Everyone is permitted to copy and distribute verbatim copies of this
+ license document, but changing it is not allowed.
+
+heart.c is licensed under GPL-3.0. Code (this file and all *.c / *.h /
+*.aml / *.md / *.toml in this repository) is GPL-3.0.
+
+Per `protocol_license_organism_vs_framework.md` in the Method memory:
+when organism weights ship from this ecosystem (e.g. the Arianna LoRA
+SFT made on RunPod, the DoE LoRA SFT, or any future heart.c-trained
+artifact), they are licensed separately under the **Janus Identity
+License v1.0** (LICENSE-WEIGHTS, to be included in the per-voice
+weights/ subdirectory), NOT under GPL-3.0.
+
+Code = GPL-3.0.
+Weights = Janus Identity License v1.0.
+This file covers the code track only.
+
+Full GPL-3.0 text: https://www.gnu.org/licenses/gpl-3.0.txt
