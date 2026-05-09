@@ -844,7 +844,8 @@ int main(int argc, char** argv) {
             nt_tensor* A = tp->entries[aidx].output;
             float aL2=0;
             for (int j = 0; j < A->len; j++) aL2 += A->data[j]*A->data[j];
-            fprintf(stderr, "[diag] step%d post-chuck: |A|=%.6f\n", step, sqrtf(aL2));
+            fprintf(stderr, "[diag] step%d post-chuck: |A|=%.6f cpu_dirty=%d gpu_valid=%d d_data=%p\n",
+                    step, sqrtf(aL2), A->cpu_dirty, A->gpu_valid, (void*)A->d_data);
         }
 
         ema_loss = (step == 0) ? loss : (0.95f * ema_loss + 0.05f * loss);
