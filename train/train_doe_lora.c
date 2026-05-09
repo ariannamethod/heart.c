@@ -501,10 +501,12 @@ static int forward(JanusBase* base, LoRA* lr, JanusConfig* cfg,
         q = nt_rope_freq(q, T_input, D, 100000.0f);
         k = nt_rope_freq(k, T_input, D, 100000.0f);
 
-        /* QK-norm (RMSNorm + scale 1.2). Apply non-param rmsnorm then scale. */
-        q = nt_seq_rmsnorm(q, -1, T_input, E);
+        /* QK-norm (per-head RMSNorm + scale 1.2 — infer_v4.c:62 qk_norm).
+         * Reshape [T, E=H*D] as [T*H, D] for nt_seq_rmsnorm so each head
+         * gets its own RMS denominator. Memory layout is identical. */
+        q = nt_seq_rmsnorm(q, -1, T_input * H, D);
         q = nt_scale(q, 1.2f);
-        k = nt_seq_rmsnorm(k, -1, T_input, E);
+        k = nt_seq_rmsnorm(k, -1, T_input * H, D);
         k = nt_scale(k, 1.2f);
 
         /* Content attention: full MHA (Janus has KV=H, no GQA) */
