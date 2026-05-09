@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define JANNUS_BOS         32759
 #define JANNUS_USER_START  32760
 #define JANNUS_USER_END    32761
 #define JANNUS_ASST_START  32762
@@ -43,13 +44,15 @@ int main(int argc, char** argv) {
     if (qn < 0) { fprintf(stderr, "encode failed\n"); return 1; }
     fprintf(stderr, "[encode] %d question tokens\n", qn);
 
-    /* Wrap: [USER_START, q..., USER_END, ASST_START] */
-    int total = qn + 3;
+    /* Wrap: [BOS, USER_START, q..., USER_END, ASST_START]
+     * Per yent.aml/README.md:79,124. */
+    int total = qn + 4;
     int* full = malloc((size_t)total * sizeof(int));
-    full[0] = JANNUS_USER_START;
-    memcpy(full + 1, q_toks, (size_t)qn * sizeof(int));
-    full[qn + 1] = JANNUS_USER_END;
-    full[qn + 2] = JANNUS_ASST_START;
+    full[0] = JANNUS_BOS;
+    full[1] = JANNUS_USER_START;
+    memcpy(full + 2, q_toks, (size_t)qn * sizeof(int));
+    full[qn + 2] = JANNUS_USER_END;
+    full[qn + 3] = JANNUS_ASST_START;
 
     FILE* f = fopen(out_path, "wb");
     if (!f) { fprintf(stderr, "open %s failed\n", out_path); return 1; }
