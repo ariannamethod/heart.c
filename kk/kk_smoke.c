@@ -16,7 +16,7 @@
  * Output: per-query top-3 with resonance + component breakdowns.
  */
 
-#include "kk_kernel.h"
+#include "/workspace/heart.c-runpod/dario/kk_kernel.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
