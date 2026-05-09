@@ -50,6 +50,9 @@ typedef struct {
     int    consecutive_main;      /* tokens emitted from main since
                                      last inner-burst; pressure builds */
     int    soul_active;           /* 1 if Soul weights loaded */
+    int    last_winner;           /* 0=main, 1=inner, -1=blend (last token) */
+    int    breakthrough_count;    /* total inner-wins this session */
+    int    total_tokens;          /* total tokens passed through borba */
 } HeartInnerVoice;
 
 int    heart_inner_voice_init(HeartInnerVoice *iv);
@@ -72,5 +75,9 @@ int    heart_soul_load(const char *path);
 void   heart_soul_inner_logits(HeartInnerVoice *iv,
                                 const int *context_tokens, int n,
                                 float *out_inner_logits, int vocab);
+
+/* Diagnostics — softmax entropy + L2 divergence between two logit vectors */
+float  heart_soul_compute_entropy(const float *logits, int vocab);
+float  heart_soul_compute_divergence(const float *a, const float *b, int vocab);
 
 #endif /* HEART_SOUL_H */
