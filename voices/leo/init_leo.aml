@@ -1,0 +1,13 @@
+; heart.c — voices/leo/init_leo.aml
+; Leo morning state. Lighter than Arianna, more open.
+
+PROPHECY 6           ; lighter forward depth
+DESTINY 0.30         ; lower destiny gain
+WORMHOLE 0.08
+ATTEND_FOCUS 0.50    ; opener exploration
+PAIN 0.00            ; clean start (Leo begins from zero, not residual)
+TENSION 0.05
+DISSONANCE 0.05
+RESONANCE_CEILING 0.94
+ENTROPY_FLOOR 0.22   ; tolerates wandering
+TEMPORAL_MODE FORWARD_BIAS

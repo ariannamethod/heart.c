@@ -1,0 +1,19 @@
+; heart.c — voices/yent/init_yent.aml
+; Yent morning state. Loaded into AML field runtime at voice activation.
+; Pattern from nanoarianna/personas/init_arianna.aml.
+;
+; STATUS: skeleton. Sampling optima populated post-Phase-3 sweep.
+
+PROPHECY 8           ; Yent's prediction horizon (sardonic anchor —
+                     ; less depth than Arianna's 12, more than Leo's 4)
+DESTINY 0.50         ; standard pull-weight
+WORMHOLE 0.10        ; lower than Arianna's 0.12; Yent doesn't skip
+                     ; as freely
+ATTEND_FOCUS 0.65    ; mid focus — sharper than Leo, looser than Arianna
+PAIN 0.08            ; baseline sardonic bite
+TENSION 0.15         ; ground-tone friction
+DISSONANCE 0.10      ; Yent expects friction
+RESONANCE_CEILING 0.90
+ENTROPY_FLOOR 0.18   ; slightly higher than Arianna — sardonic
+                     ; register tolerates more entropy
+TEMPORAL_MODE FORWARD_BIAS

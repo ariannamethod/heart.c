@@ -1,0 +1,19 @@
+[slot]
+id = "heart/converse"
+description = "phone-1 heart.c — field-selected voice turn (selector decides who speaks)"
+exec = "heart converse --auto --max_tokens 64"
+async = false
+args_schema = "[{name:'prompt',type:'string',optional:true}]"
+output = "stdout text (turn transcript with selected voice prefix)"
+
+[requires]
+ram = "500MB"
+disk = "0"
+gpu = false
+
+[provides]
+streaming_metrics = ""
+
+[ownership]
+arch = ["aarch64"]
+os   = ["android"]

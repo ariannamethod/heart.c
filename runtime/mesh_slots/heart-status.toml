@@ -1,0 +1,19 @@
+[slot]
+id = "heart/status"
+description = "phone-1 heart.c — status snapshot (uptime, last turn, field clock)"
+exec = "heart status"
+async = false
+args_schema = "[]"
+output = "stdout text"
+
+[requires]
+ram = "1MB"
+disk = "0"
+gpu = false
+
+[provides]
+streaming_metrics = ""
+
+[ownership]
+arch = ["aarch64"]
+os   = ["android"]

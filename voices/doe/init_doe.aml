@@ -1,0 +1,13 @@
+; heart.c — voices/doe/init_doe.aml
+; DoE morning state. Parliamentary register.
+
+PROPHECY 10
+DESTINY 0.45
+WORMHOLE 0.10
+ATTEND_FOCUS 0.70    ; parliament tracks multiple positions
+PAIN 0.02
+TENSION 0.12         ; mild tension between expert positions
+DISSONANCE 0.15      ; built into voting structure
+RESONANCE_CEILING 0.88
+ENTROPY_FLOOR 0.20
+TEMPORAL_MODE FORWARD_BIAS

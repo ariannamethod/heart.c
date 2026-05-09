@@ -1,0 +1,15 @@
+tools/ — vendored headers from upstream repos. Populated at Phase 0 build:
+
+  jannus_calendar.h    — vendored from yent.aml/jannus-r/tools/
+  jannus_spa.h         — vendored from yent.aml/jannus-r/tools/
+  jannus_split.h       — vendored from yent.aml/jannus-r/tools/
+  yent_forward.h       — vendored from yent.aml/tools/
+  resonance_forward.h  — vendored from resonance.aml/tools/, with
+                         Mac Accelerate flags dropped, nt_blas_matvec
+                         substituted for cblas_sgemm (FIX from review)
+  notorch.{c,h}        — vendored from ~/arianna/notorch/
+
+Vendoring happens at Phase 0 on the pod, not in git (these files are
+upstream artefacts). Heart.c keeps its own `.gitignore` line for
+`tools/*.{h,c}` if needed, or vendors with explicit upstream-version
+headers per file.

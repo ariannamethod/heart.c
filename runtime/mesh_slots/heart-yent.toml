@@ -1,0 +1,19 @@
+[slot]
+id = "heart/yent"
+description = "phone-1 heart.c — Yent voice turn (Janus 176M + jannus-r 12-step)"
+exec = "heart converse --voice yent --max_tokens 64"
+async = false
+args_schema = "[{name:'prompt',type:'string',optional:true}]"
+output = "stdout text (turn transcript)"
+
+[requires]
+ram = "500MB"
+disk = "0"
+gpu = false
+
+[provides]
+streaming_metrics = ""
+
+[ownership]
+arch = ["aarch64"]
+os   = ["android"]
