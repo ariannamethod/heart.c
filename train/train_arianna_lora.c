@@ -197,8 +197,10 @@ static int resonance_load(const char* path, ResonanceConfig* cfg, ResonanceBase*
         fclose(f); return 1;
     }
 
-    int hdr[8];
-    if (fread(hdr, 4, 8, f) != 8) { fclose(f); return 1; }
+    /* RS02 header is 9 int32s — first 8 are configs (E,B,T,H,D,R,M,V),
+     * the 9th is reserved/unused (resonance_forward.h:264 reads 9, uses 8). */
+    int hdr[9];
+    if (fread(hdr, 4, 9, f) != 9) { fclose(f); return 1; }
     cfg->E = hdr[0]; cfg->B = hdr[1]; cfg->T = hdr[2]; cfg->H = hdr[3];
     cfg->D = hdr[4]; cfg->R = hdr[5]; cfg->M = hdr[6]; cfg->V = hdr[7];
 
