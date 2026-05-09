@@ -3,9 +3,10 @@
 # Compiles against vendored notorch sources (../../notorch/ on pod, or
 # ~/arianna/notorch/ via env override). No PyTorch / no Python in train path.
 
-NOTORCH_DIR ?= /workspace/heart.c-runpod/notorch
+NOTORCH_DIR ?= /workspace/notorch
+DARIO_DIR   ?= /workspace/dario
 NT_SRC      = $(NOTORCH_DIR)/notorch.c $(NOTORCH_DIR)/gguf.c
-NT_INC      = -I$(NOTORCH_DIR)
+NT_INC      = -I$(NOTORCH_DIR) -I$(DARIO_DIR)
 
 UNAME := $(shell uname)
 ifeq ($(UNAME), Darwin)

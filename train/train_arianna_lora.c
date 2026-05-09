@@ -498,9 +498,13 @@ static int forward(ResonanceBase* base, LoRA* lr, ResonanceConfig* cfg,
          * when GPU mode is on (notorch.c:3127). */
         int content = nt_mh_causal_attention(q, k, v, T_input, D);
 
-        /* RRPRAM low-rank attention: pre-built wr_combined, base wr_a/wr_b frozen */
-        int rrpram = nt_rrpram_lowrank_attention(blk->wr_combined_idx,
-                                                  xn, v, T_input, E, H, D);
+        /* RRPRAM low-rank attention (broadcast pattern, canonical Janus per
+         * dario/infer_v4.c:218-249): mid[h,r] = sum_t sum_e x[t,e]*wr_a[h,e,r]
+         * is layer-broadcast across all positions. Per-position op
+         * nt_rrpram_lowrank_attention is function-class different and causes
+         * training plateau near ln(V) = uniform-distribution loss. */
+        int rrpram = nt_rrpram_broadcast_attention(blk->wr_combined_idx,
+                                                    xn, v, T_input, E, H, D);
 
         /* Per-head sigmoid gate blend: pre-computed g_expanded[E] on tape.
          * blend = g_tiled * content + (1-g_tiled) * rrpram */
