@@ -72,8 +72,9 @@ merge_doe_lora: merge_doe_lora.c
 
 # Inference driver for Resonance — links resonance_forward.h (vendored) +
 # notorch.c + gguf.c + ariannamethod.c (AML field overlay).
+# _POSIX_C_SOURCE=200809L exposes CLOCK_MONOTONIC on Linux glibc.
 infer_resonance: infer_resonance.c
-	$(CC) -O2 -Wall -Wextra -std=c11 $(BLAS_DEFS) \
+	$(CC) -O2 -Wall -Wextra -std=c11 -D_POSIX_C_SOURCE=200809L $(BLAS_DEFS) \
 	  -I$(NOTORCH_DIR) -I$(DARIO_DIR) -I$(HEART_TOOLS) -I$(AML_DIR) \
 	  -o $@ infer_resonance.c $(NT_SRC) $(AML_DIR)/ariannamethod.c \
 	  -lm $(BLAS_LIBS)
