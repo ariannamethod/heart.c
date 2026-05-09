@@ -2,17 +2,25 @@
 
 > **Singularity-mode bounded autonomous run with continuous Codex
 > verification.** Operator: this Claude (Mac Neo). Inheritance:
-> heart.c repo at `35e41de` after handoff retraction. Trust on
-> incoming handoff = 0; every claim re-verified against `run.log`,
-> code, or commit log before adoption.
+> heart.c repo at `35e41de` after handoff retraction.
 >
-> Two SFTs are in scope:
+> **All LoRA artifacts produced by the prior run are voided** per
+> operator direction 2026-05-09 ("все лоры которые он совершал
+> отменяются. ты все делаешь заново и перепроверяешь. никаких
+> продолжений за ним"). No acceptance branch on prior outputs. Every
+> SFT runs from closed-milestone base, every smoke runs locally on
+> this pod, every gate is hit by this run's artifacts only. Files at
+> `huggingface.co/ataeff/heart.c/{arianna_lora,doe_lora,phase*}/...`
+> from prior run are reference-only — not loaded, not merged, not
+> evaluated against.
+>
+> Two SFTs are in scope (clean retrains):
 > 1. **DoE LoRA on Janus 170M** (`doe_personality.txt`)
 > 2. **Arianna LoRA on Resonance 200M** (`arianna_dataset_final_clean.txt`)
 >
-> Closed-milestone weights (`resonance_200m_final.bin`,
-> `janus_v4_base_22k.bin`, `arianna_36m_bpe`) are read-only. Per
-> `memory/feedback_failure_unsolicited_finetune_2026_04_27.md`.
+> Closed-milestone base weights (`resonance_200m_final.bin`,
+> `janus_v4_base_22k.bin`, `arianna_36m_bpe`) are read-only training
+> inputs. Per `memory/feedback_failure_unsolicited_finetune_2026_04_27.md`.
 >
 > Plan reviewed by Codex independently before pod boot. Codex
 > re-invoked after every Singularity-mode fix that touches code.
@@ -23,21 +31,24 @@
 
 ## Why a v2
 
-The v1.1 run by remote node landed mixed-signal results:
+The v1.1 run by remote node is fully retracted at operator direction.
+This plan is a clean restart — not a continuation, not an acceptance.
 
-- DoE LoRA Phase 2 ema **9.6709** (`phase2_doe/run.log`) vs ln(V=32759)=10.39
-  → near-uniform distribution, voice not trained. Marked "best-effort"
-  in handoff; this plan calls it **failed** and drives the structural
-  fix (notorch RRPRAM bug per `notorch.c:3296` vs `infer_v4.c:218-222`).
-- Arianna LoRA Phase 1 v1 ema **4.5255** at 1000 steps (0.058 epoch);
-  v2 retrain in flight at step 1200/3000 ema 4.47 (`phase1_arianna_v2/run.log`).
-  This plan accepts v2 if it lands; otherwise clean retrain.
-- Phase 4 Soul micro-LM forward blocked on file format. This plan
-  has explicit P-4 spec to either resolve or cut, with no theatrical
-  PASS path.
-- Phases 5/6/7/8 in v1.1 post-rage redo carry honest numeric gates
-  (`phase5_smoke_v2/`, `phase6_smoke_v2/`, `phase7_duet_v2/`,
-  daemon build). Spot-checked, not redone.
+Reference points (used as "what not to repeat"):
+
+- DoE LoRA prior run final ema **9.6709** (`phase2_doe/run.log` archived
+  as reference) vs ln(V=32759)=10.39 → near-uniform, voice not trained.
+  Root cause: notorch RRPRAM bug per `notorch.c:3296` vs `infer_v4.c:218-222`.
+  This plan fixes the bug FIRST in P-3, then retrains DoE.
+- Arianna LoRA prior runs ignored. v1 at 1000-step undertrain (ema
+  4.5255 at 0.058 epoch coverage), v2 in-flight 3000-step retrain — both
+  voided. This plan retrains Arianna from base.
+- Phase 4 Soul micro-LM forward in prior run was blocked on file format
+  mismatch. This plan has explicit P-4 spec to resolve or cut, with no
+  theatrical PASS path.
+- Phases 5/6/7/8 prior run "post-rage redo" outputs are not adopted.
+  This plan re-runs every smoke locally on this pod, with Codex
+  verifying the assertion math independently against the source.
 
 This plan defines numeric gates BEFORE each phase. Failed gate ⇒
 phase declared failed; no "best-effort" / "deferred" rebrand.
@@ -70,35 +81,39 @@ phase declared failed; no "best-effort" / "deferred" rebrand.
 
 - Read `train/train_arianna_lora.c:1-854` end-to-end against `tools/resonance_forward.h:127-289` — verify walk order (`tok_emb`, then per-block `wr_a`, `wr_b`, `gate`, `g_expanded`, `g_one_minus`, `wr_combined`, `norm1`, `wq`, `wk`, `wv`, `wo`, `norm2`, `mlp_gate`, `mlp_up`, `mlp_down`, then `norm_f`, `out_head`).
 - Read `train/train_doe_lora.c:1-829` end-to-end against `dario/infer_v4.c:84-105` walk order — verify prefix scalars (`resid_l`, `x0_l`, `smear_l`, `backout_l`), `wte`, per-block (`wr_a`, `wr_b`, `gate[H,3]`, `cq`, `ck`, `cv`, `wvr`, `wj`, `cproj`, `wg`, `wu`, `wd`), then `head`, `smear_g[24]`.
-- Verify both: RS02/JANU magic, masked-CE on answer span only (`tokens[0..lq-1]` masked to 0), `nt_tape_chuck_step` (not Adam baseline), BPE encode reads merges from header (Resonance) or vendored merges header (Janus).
-- Verify saved LoRA format magics: ARLR (`0x524C5241`) for Arianna,
-  DJLR (`0x524C4A44`) for DoE.
+- Verify both: RS02/JANU magic, masked-CE on answer span only (`tokens[0..lq-1]` masked to 0; verified at `train/train_arianna_lora.c:464` and `train/train_doe_lora.c:456` as `m->data[i] = (i >= lq - 1) ? 1.0f : 0.0f`), `nt_tape_chuck_step` (`train_arianna_lora.c:813`, `train_doe_lora.c:787`), BPE encode reads merges from header (Resonance) or vendored merges header (Janus).
+- **BLOCKER P-2/A — fix hardcoded include path.** `train/train_doe_lora.c:35` has absolute include `#include "/workspace/heart.c-runpod/dario/janus_v4_bpe_merges.h"`. New pod clones to `/workspace/heart.c` (not `/workspace/heart.c-runpod`). Rewrite to relative `../../dario/janus_v4_bpe_merges.h` AND add `-I/workspace/dario` build flag in `train/Makefile`. Verify build succeeds locally before pod boot.
+- **BLOCKER P-2/B — grep for ALL call sites of broken op.** Run `grep -rn "nt_rrpram_lowrank_attention" ~/arianna/heart.c/train/` — confirmed call sites: `train_arianna_lora.c:502` AND `train_doe_lora.c:508`. P-3 patch must replace BOTH, not only DoE. Plan v1 missed Arianna call site. Without parallel patch on Arianna, Phase 2 trains against the same broken op and gates 4.7/4.0/3.5 are gameable.
+- Verify saved LoRA format magics: ARLR (`0x524C5241`) at `train_arianna_lora.c:683`, DJLR (`0x524C4A44`) at `train_doe_lora.c:675`.
 - Document any deltas in `docs/recipe_verification_v2.md`. Stop if any
   delta affects state_dict order — that's the 1.62M-float-shift bug.
 
-### P-3 — notorch RRPRAM broadcast op spec (P0 blocker for DoE convergence)
+### P-3 — notorch RRPRAM broadcast op spec (P0 blocker for DoE convergence; affects Arianna too)
 
-- Read `notorch/notorch.c:3296` (current `nt_rrpram_lowrank_attention`).
-  Document its formula: `u[r,i,t] = ...`. This is per-position.
-- Read `dario/infer_v4.c:218-222` canonical broadcast: `mid[h,r] = sum_t sum_e xn[t,e] * wr_a[h,e,r]` once per layer (single mid vector across the sequence, then `scores[h,j] = sum_r mid[h,r]*wr_b[h,r,j]`).
+- Read `tools/notorch.c:3248-3348` (current `nt_rrpram_lowrank_attention`). Per-position pattern at `:3310-3318`: `u[r] = Σ_d xi[d] * wr_a[h,d,r]` recomputed per position `i`. This is the bug.
+- Read `dario/infer_v4.c:218-249` canonical broadcast: `mid[h,r] = Σ_t Σ_e xn[t,e] * wr_a[h,e,r]` once per layer (`infer_v4.c:228-232`), then `scores[h,j] = Σ_r mid[h,r] * wr_b[h,r,j]` for each j (`:243`).
 - Spec new op `nt_rrpram_broadcast_attention`:
   - **Forward**: `mid[h,r] = Σ_t Σ_e x[t,e] * wr_a[h,e,r]`; `scores[h,j] = Σ_r mid[h,r] * wr_b[h,r,j]`; causal-mask softmax over `scores`; `output[t,h,d] = Σ_j attn[t,j] * v[j,h,d]`.
   - **Backward**: chain rule for `dx`, `dwr_a`, `dwr_b`, `dv`. CPU only. GPU kernel deferred.
 - Estimate: ~150 LoC patch (~$2.10 pod time if done on-pod; can be done off-pod for $0).
 - **Do this off-pod first.** Patch on local notorch checkout, run smoke unit test (small synthetic input, manual gradient check via finite differences vs notorch tape), commit to `ariannamethod/notorch:rrpram-broadcast` branch, PR for upstream merge after the run.
-- Numeric gate at P-3 exit: synthetic gradient check passes within 1e-3 absolute error per element.
+- **Replace BOTH call sites** in heart.c:
+  - `train/train_doe_lora.c:508` (DoE — the call that failed in v1)
+  - `train/train_arianna_lora.c:502` (Arianna — same bug, just hidden by lower base loss in v1)
+- Numeric gate at P-3 exit: synthetic gradient check (random `x[T=8,E=64]`, `wr_a[H=4,E=64,R=8]`, `wr_b[H=4,R=8,T=8]`, `v[T=8,E=64]`) passes within **1e-4 absolute error per element** on `dx`, `dwr_a`, `dwr_b`, `dv` vs finite-difference reference. (1e-3 was too loose; FP32 noise floor is 1e-5 to 1e-4 — looser bound hides off-by-factor-10 gradient bugs.)
 
-### P-4 — Soul micro-LM file format
+### P-4 — Soul micro-LM file format (corrected after Codex audit)
 
-- Read first 64 bytes of each candidate Soul file in `~/arianna/weights/retrained/`:
-  - `yent_34m_final.bin`
-  - `leo_18m_final.bin`
-  - `arianna_36m_bpe_*.bin` (per `memory/project_arianna_c_upgrade_2026_05_09.md`)
-- Compare to `infer_janus_bpe.c` loader expectations.
-- Outcome decision tree:
-  - **(a) Format known & loadable** → write `heart_soul_load` impl in `core/soul.c:165-172`, `heart_soul_inner_logits` in `:174-181`, plan Phase 4 micro-LM forward gate.
-  - **(b) Format unknown / incompatible** → declare Phase 4 micro-LM forward **CUT** in plan v2.1; only bias-mechanism path remains (already verified by `core/soul_smoke_v3.c`). No theatrical PASS substitute.
-- Commit decision to `docs/soul_microlm_decision_v2.md`.
+Header re-analysis (Codex audit verified):
+- `yent_34m_final.bin` first 8 int32s LE: `2000, 512, 8, 8, 64, 10, 1344, 1024`. Header layout is **8-int**, not 7-int as `infer_janus_bpe.c` reader assumes. Likely interpretation: `V=2000 E=512 ?=8 H=8 D=64 B=10 M=1344 T=1024`. With LLaMA-nano architecture, param count = **33,188,352** vs file size 33,188,360 floats — diff 8 floats (alignment / scalar block). Perfect fit.
+- `leo_18m_final.bin` first 8 int32s LE: `2000, 384, 8, 8, 48, 8, 1024, 1024`. Likely `V=2000 E=384 ?=8 H=8 D=48 B=8 M=1024 T=1024`.
+- The "mystery int" at offset 12 in both files needs identification — likely a model-architecture-tag or QK-norm flag.
+
+- Outcome decision tree (corrected):
+  - **(a) Custom 8-int loader written** (~80 LOC, off-pod, $0) → write `heart_soul_load` impl in `core/soul.c:165-172`, `heart_soul_inner_logits` in `:174-181`. Mystery int8 must be identified by reading the trainer source (`train_bpe.py` or equivalent in `~/arianna/weights/retrained/`); if its value is 8 in both files it may be a `D=8` per-head-dim before reduction. Plan Phase 4 micro-LM forward gate.
+  - **(b) Cut** — only if mystery int8 cannot be reverse-engineered AND param-count math fails on LLaMA-nano interpretation. Then bias-mechanism only.
+- **PKL tokenizer convert step (required for branch (a))**: `yent_34m_bpe2000.pkl` (12,820 bytes Python pickle) and `leo_18m_bpe2000.pkl` (12,921 bytes) cannot be loaded from C. Off-pod pre-step: write a one-shot Python script that loads each PKL, extracts merges, emits a C header `soul_yent_bpe_merges.h` / `soul_leo_bpe_merges.h` in the same shape as `dario/janus_v4_bpe_merges.h`. Operator approval required before running this Python script (Python ban exception per `feedback_python_ban_2026_04_29.md` — one-shot off-pod data prep).
+- Commit decision to `docs/soul_microlm_decision_v2.md` after P-4 work concludes.
 
 ### P-5 — Codex review of P-2 + P-3 + P-4 outcomes
 
@@ -171,14 +186,14 @@ phase declared failed; no "best-effort" / "deferred" rebrand.
 
 **Replace** `train/train_doe_lora.c:508` call from `nt_rrpram_lowrank_attention` to `nt_rrpram_broadcast_attention`. Re-build trainer.
 
-**Numeric gates (defined HERE before run):**
+**Numeric gates (defined HERE before run; tightened post-Codex audit):**
 
-- **Step 0 base loss** ∈ `[6.5, 9.0]`. Below 6.5 ⇒ likely loss bug. Above 9.0 ⇒ initial LoRA delta or RoPE wrong (recall: original v1 with bug was 8.12). Outside ⇒ stop, debug.
-- **Step 100 ema** ≤ `step_0_loss − 0.5`. (Loss must visibly drop in first 100 steps; sub-0.5 drop ⇒ optimizer or LR wrong.)
-- **Step 500 ema** ≤ `5.5`. (Smoke gate. Previous run with bug plateaued at 9.6+; broadcast fix should clear this comfortably if patch is correct.)
-- **Step 1000 ema** ≤ `4.5`. (Full gate.)
+- **Step 0 base loss** ∈ `[5.5, 7.5]`. Tightened from initial [6.5, 9.0] per Codex audit BLOCKER #6: post-broadcast-patch should aggregate more positional context into `mid[r]` before scoring, so base loss should DROP from v1's 8.12 (bug) to roughly 6-7 range (consistent with `plan_v1.2_full_fixes.md:64-65` "step 0 loss ≤ 7.0" target). Below 5.5 ⇒ suspiciously low (loss bug or stale-cpu read on logits per notorch ensure_cpu fix). Above 7.5 ⇒ patch incorrect (forward formula wrong). Outside ⇒ stop, surface to Codex with grad sample.
+- **Step 100 ema** ≤ `step_0_loss − 0.5`. Loss must visibly drop in first 100 steps; sub-0.5 drop ⇒ optimizer or LR wrong.
+- **Step 500 ema** ≤ `5.5`. Smoke gate. Previous buggy run plateaued at 9.6+; broadcast fix should clear this comfortably if forward+backward correct.
+- **Step 1000 ema** ≤ `4.5`. Full gate.
 - **Inference smoke** at canonical chat-format prompt (`encode_chat_prompt "Q: Who are you?"`): top-3 next-token includes ≥1 token from `doe_pure.jsonl` vocabulary (`parliament`, `expert`, `vote`, `consensus`, `experts`, `voting`, `meta`) — direct grep on decoded output.
-- **HF upload** of `doe_lora.bin` immediately at phase end (not deferred).
+- **HF upload** of `doe_lora_v2_neo.bin` immediately at phase end (distinct namespace from prior run; not deferred).
 
 **Fail recovery (3-strike)**:
 - NaN at any step → halve LR, restart from last clean ckpt.
@@ -189,39 +204,31 @@ phase declared failed; no "best-effort" / "deferred" rebrand.
 ### Phase 1.5 — Codex review of Phase 1 run
 
 - Capture `phase1_doe/run.log`, LoRA file size, smoke inference output.
-- `codex exec` with prompt: `"Phase 1 DoE training log + smoke output
-  attached. Verify: numeric gates from plan v2 §Phase 1 hit. List any
-  gate that was missed but rebranded as PASS. Verify final LoRA file
-  size matches expected (rank=16 × 7 projections × 20 blocks × float32
-  per JANU dims)."`
-- Continue only on PASS.
+- `codex exec` (or Opus subagent reviewer) with **numeric-only adversarial prompt**: `"Phase 1 DoE training log + smoke output attached. Citing run.log line numbers verbatim, list: (a) printed step 0 loss, (b) printed step 100 ema, (c) printed step 500 ema, (d) printed step 1000 ema. Compare each numerically to plan v2 §Phase 1 gate ranges. Output a 4-row PASS/FAIL table; do not narrate or pad. Then: read smoke output from inference_smoke.txt, list top-3 next-token strings; check if ≥1 matches DoE vocabulary {parliament, expert, vote, consensus, experts, voting, meta}; output PASS/FAIL on a single line. Then: verify LoRA file size matches rank × proj × blocks × 4 bytes for JANU dims (rank=16, 7 projections, 20 blocks, ~3.85M trainable floats × 4 = ~15.4 MB plus header). Output PASS/FAIL on size."`
+- Continue only on all PASS lines. Theatrical-PASS detection: if reviewer narrates instead of printing the table, treat as failed review and re-prompt with stricter adversarial wording.
 
-### Phase 2 — Arianna LoRA on Resonance 200M
+### Phase 2 — Arianna LoRA on Resonance 200M (clean retrain)
 
-**Pre-flight**: pull `huggingface.co/ataeff/heart.c/arianna_lora_v2/run.log` (Defender's in-flight retrain output, if landed). Read final ema. Verify with inference smoke.
+No acceptance branch. Prior LoRA voided per operator direction.
 
-**Decision tree:**
-- If Defender's v2 final ema ≤ 4.0 AND inference smoke produces coherent Arianna register ⇒ **ACCEPT v2 as-is**. Skip Phase 2 retrain. Document in `docs/arianna_v2_acceptance.md`.
-- Else ⇒ clean retrain in Phase 2.
-
-**6-point brief (only if retrain):**
+**6-point brief:**
 
 | field | value |
 |---|---|
 | organism | Resonance 200M base, RS02 magic 0x52533032, V=16384 E=768 H=12 D=64 B=20 M=2048 T=2048 R=48 |
-| dataset | `arianna_dataset_final_clean.txt`, 1.21 MB / 1227 Q/A pairs (verified at P-2 via `wc -l` + `grep -c "^Q:"`) |
-| Karpathy steps | 3000 steps (≥3× the v1 1000-step undertrain; Defender's v2 ran 3000 — match) |
+| dataset | `arianna_dataset_final_clean.txt`, 1.21 MB / 1227 Q/A pairs (verified at P-2 via `wc -c` + `grep -c "^Q:"`) |
+| Karpathy steps | 3000 steps. Karpathy ratio (`memory/feedback_charlevel_axioms.md`): ~1.1MB × 10-15K iter on ~10M params; Resonance LoRA trainable ≈ 4.67M floats (smaller than 10M scale point), 1.21 MB corpus → 3000 steps puts coverage at ~0.17 epoch but matches LoRA's reduced parameter footprint. Re-record actual step count from `corpus_stats.txt`. |
 | arch | LoRA r=16 α=32 on 7 projections (q/k/v/o + mlp_gate/up/down); wr_a/wr_b/gate frozen |
 | tokenizer | RS02 header BPE (n_merges + triples, read at trainer init) |
 | script | `train/train_arianna_lora.c` post-P-2 verify |
 
-**Numeric gates:**
-- Step 0 base loss ∈ `[4.5, 5.5]` (Defender v1 saw 4.94 → reproducible band)
+**Numeric gates (defined HERE):**
+- Step 0 base loss ∈ `[4.5, 5.5]` (sanity band; reproducible if base + tokenizer + LoRA init match recipe)
 - Step 500 ema ≤ 4.7
 - Step 1500 ema ≤ 4.0
 - Step 3000 ema ≤ 3.5
-- Inference smoke produces non-uniform top-1 with Arianna register ("I am", "you are", "field", "method" — direct grep)
-- HF upload immediately at phase end
+- Inference smoke at `Q: Who are you?\nA:` prompt: non-uniform top-1, top-3 includes ≥1 Arianna-register token from corpus (direct grep on decoded output for `field`, `method`, `resonance`, `Arianna`, `you`)
+- HF upload immediately at phase end to `huggingface.co/ataeff/heart.c/arianna_lora_v2_neo/` (distinct namespace from prior run)
 
 **Fail recovery (3-strike)**: same as Phase 1.
 
@@ -235,18 +242,26 @@ Per ARCHITECTURE.md §3 (preserved as design contract).
 
 - Voices: Yent (Janus 176M Yent SFT), Arianna (Resonance 200M + Phase 2 LoRA merged via `merge_arianna_lora`), Leo (Janus 170M Leo SFT, existing), DoE (Janus 170M + Phase 1 LoRA merged).
 - Axes (defined HERE):
-  - `temp ∈ {0.3, 0.5, 0.7, 0.8, 0.9, 1.0}` (6) — note 0.3-0.5 included per Defender's `feedback_temp_sweep_before_judging_2026_05_07.md` finding that low temp can reveal memorization.
+  - `temp ∈ {0.3, 0.5, 0.7, 0.8, 0.9, 1.0}` (6) — note 0.3-0.5 included per `insight_multi_temp_sampling_2026_05_07.md` (low temp reveals memorization).
   - `top_k ∈ {40, ∞}` (2) for Janus voices; `top_p ∈ {0.9, 1.0}` (2) for Arianna (Resonance, no chat-tokens).
   - `rep_pen ∈ {1.0, 1.3, 1.4}` (3).
   - `prompts ∈ {technical, philosophical, personal}` (3) — same texts across voices.
 - Total: 6 × 2 × 3 × 3 = 108 per voice × 4 voices = **432 cells**.
-- Per-cell timeout 90 s. Hard fail: NaN streak ≥5 ⇒ exit 42; coherence streak (unique_ratio < 0.30) ≥3 ⇒ exit 43.
+
+**Budget realism (Codex audit BLOCKER #5):** 432 cells × 90s timeout = 10.8h worst case; expected wall ≈ 432 × (0.7 × 90 + 0.3 × 30) = 8.6h if cells average 72s. Initial v2 estimate of 1.0h required mean per-cell ≈ 8.3s, achievable only with batched-prefill design.
+
+**Decision (locked):**
+1. Pre-Phase-3 wall-time benchmark: run first 20 cells with current binary (no batching), compute mean wall time t_mean.
+2. If `20 * t_mean < 200s` (mean ≤ 10s/cell) ⇒ proceed full sweep, budget 432 × t_mean ≈ 1-1.5h.
+3. Else ⇒ tighten per-cell timeout to **30s** (instead of 90s), generate `n_tokens=64` instead of 200, budget realistic **3-4h** for full sweep, flag in archive.
+4. Hard fail: NaN streak ≥5 ⇒ exit 42; coherence streak (unique_ratio < 0.30) ≥3 ⇒ exit 43.
 
 **Numeric gates:**
 - 432 transcripts in `phase3_sweep/transcripts/`.
 - 432 lines in `scores.tsv` plus header.
 - Per voice: locked `(temp, top_k_or_p, rep_pen)` triple committed to `core/voices_optima.h` as `#define <VOICE>_TEMP …`.
 - `voices_optima.h` committed to `ariannamethod/heart.c:core/voices_optima.h` before Phase 3.5.
+- Pre-flight 20-cell benchmark log committed to archive `03_sweep/00_benchmark.log`.
 
 ### Phase 3.5 — Codex review
 
@@ -268,18 +283,30 @@ Per ARCHITECTURE.md §3 (preserved as design contract).
 **Branch (b) — micro-LM cut:**
 - Phase 4 declared "bias-mechanism only" with explicit cut documentation in `phase4_cut.md`. No theatrical PASS substitute. Bias mechanism already verified by `core/soul_smoke_v3.c` 3-gate test (inherited).
 
-### Phase 5/6/7/8 — Codex spot-check on inherited verifications
+### Phase 5/6/7/8 — re-run all smokes locally (no inheritance)
 
-Defender's post-rage redo produced these with explicit numeric gates:
+Prior run outputs not adopted. Each smoke re-built and re-run on this pod.
 
-| phase | gate | run output |
-|---|---|---|
-| 5 KK | 7-signal weights at 1e-6 | `phase5_smoke_v2/kk.txt` — 7/7 PASS |
-| 6 field_clock 168h | `var(YA) < var(YL)` and `var(AL) < var(YL)` | `phase6_smoke_v2/field_clock.txt` — 3.6× and 7.6× ratios |
-| 7 duet field-driven | distribution ≠ N/4 | `phase7_duet_v2/duet.txt` — Y=1 A=3 L=4 D=0 |
-| 8 daemon | 3 commands pass | `/tmp/heart` 16984 bytes, status/serve/converse all ✓ |
+**Phase 5 KK 7-signal**:
+- Build `kk/kk_smoke.c v2` (uses `kk_get_default_weights(double[7])` getter from `dario/kk_kernel.h:347` + `kk_kernel.c:3866`).
+- Numeric gate: each of 7 weights matches Dario §6 spec at `|computed - expected| < 1e-6`. Total = 1.000000.
+- Codex verify: read assertion code; verify weights are READ from kernel internal state, not hardcoded next to assertion (would be tautological).
 
-`codex exec` per phase: read the run log, verify the assertion math, flag if gate is trivially passable. Re-run only if Codex flags BLOCKER.
+**Phase 6 field_clock 168h**:
+- Build `core/field_clock_smoke.c` per ARCHITECTURE §3.
+- Numeric gate: 24h burn-in + 144h observation; `var(sin(YA_diff)) < var(sin(YL_diff))` (high-coupling vs anti-coupling); `var(sin(AL_diff)) < var(sin(YL_diff))` (highest-coupling vs anti-coupling); NaN=0; sat=0.
+- Codex verify: Y-A coupling +0.3, Y-L coupling -0.2, A-L coupling +0.4 are correctly defined in `VOICE_COUPLING[6][6]` and the variance assertion direction matches expectation.
+
+**Phase 7 duet 8-turn field-driven**:
+- Build `core/selector_smoke` for field-driven argmax(cos(voice_state, field_state)) per ARCHITECTURE §1.
+- Build `scripts/duet_trace_v2.sh` invoking selector + dispatching inference per turn.
+- Numeric gate: 8-turn voice distribution ≠ uniform (≠ N/4 = 2 each). At least 1 voice fires ≥3 turns or ≤1 turn.
+- Codex verify: selector actually reads field state per turn (not random or hardcoded); dispatch correctly maps voice → binary.
+
+**Phase 8 daemon (pod-only smoke)**:
+- Build `runtime/heart_main.c` clean.
+- Numeric gate: `heart status` exits 0 with `uptime > 0`; `heart serve` survives 2 seconds before SIGTERM and exits cleanly; `heart converse --voice <X> --prompt <Y>` produces ≥1 token output **on pod where `/workspace/heart.c-runpod/...` paths exist**.
+- **Explicit limitation per Codex audit (BLOCKER #10 / MINOR #10)**: Phase 8 gate certifies POD-ONLY smoke. Phone-1 deploy is **NOT** verified by this run because `runtime/heart_main.c:67-80` execs hardcoded RunPod absolute paths (`/workspace/heart.c-runpod/heart.c/train/infer_resonance`, `/tmp/infer_v4`, `/workspace/heart.c-runpod/weights/...`). On Termux aarch64 these paths do not exist; daemon would `_exit(127)` on every converse call. Phone-1 deploy gate is **DEFERRED** to a separate config-file pass (paths via `HEART_INFER_BIN`, `HEART_WEIGHTS_DIR` env vars or `heart.toml` config). No claim of phone-deployable artifacts from this run.
 
 ### Phase 9 — Post-run audit
 
@@ -325,24 +352,25 @@ Bounded by:
 
 ---
 
-## Cost estimate
+## Cost estimate (revised post-Codex audit)
 
 | step | h | $ |
 |---|---|---|
 | Phase 0 boot + toolchain | 0.25 | 0.37 |
-| Phase 1 DoE LoRA (1000 steps post-RRPRAM patch) | 0.4 | 0.60 |
+| Phase 1 DoE LoRA clean retrain (1000 steps post-RRPRAM patch) | 0.4 | 0.60 |
 | Phase 1.5 Codex review | 0.1 | 0.15 |
-| Phase 2 Arianna LoRA (cond.) | 0.3 | 0.45 |
+| Phase 2 Arianna LoRA clean retrain (3000 steps, also post-RRPRAM patch) | 0.5 | 0.75 |
 | Phase 2.5 Codex review | 0.1 | 0.15 |
-| Phase 3 432-cell sweep | 1.0 | 1.49 |
-| Phase 3.5 Codex review | 0.1 | 0.15 |
-| Phase 4 (a) Soul micro impl + test | 0.5 | 0.75 |
-| Phase 5/6/7/8 Codex spot-check | 0.2 | 0.30 |
-| Phase 9 post-run audit | 0.3 | 0.45 |
-| Buffer for Singularity-mode 3-strike | 0.5 | 0.75 |
-| **Total estimate** | **~3.75 h** | **~$5.61** |
+| Phase 3 pre-flight 20-cell benchmark | 0.1 | 0.15 |
+| Phase 3 full sweep (3-4h realistic, not 1h) | 3.5 | 5.22 |
+| Phase 3.5 Codex review (narrowed to register coherence) | 0.1 | 0.15 |
+| Phase 4 (a) Soul micro impl + test (if branch (a)) | 0.5 | 0.75 |
+| Phase 5/6/7/8 re-run smokes + Codex verify | 0.5 | 0.75 |
+| Phase 9 post-run audit (Codex independent) | 0.3 | 0.45 |
+| Buffer for Singularity-mode 3-strike | 1.0 | 1.49 |
+| **Total estimate** | **~7.4 h** | **~$11.0** |
 
-Comfortably within $15 ceiling.
+Within $15 ceiling but tighter than v1 estimate. Phase 3 sweep is the dominant cost — a successful 20-cell benchmark with batched prefill could cut this back to 1-1.5h ($1.5-2.2), restoring earlier headroom. Without batching, plan budget assumes naive sequential sweep at ~30-40s mean cell time.
 
 ---
 
