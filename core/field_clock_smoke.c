@@ -171,6 +171,9 @@ int main(int argc, char** argv) {
     int n_nan = 0, n_sat = 0;
     double R_min = 2.0, R_max = -1.0;
 
+    /* Per-hour mean phase per primary (0=Y, 1=A, 2=L, 3=D, 4=F_S, 5=M_P) */
+    double phase_history[24][N_PRIMARIES];
+
     for (int hour = 0; hour < 24; hour++) {
         double t_days = t_now_days + (double)hour / 24.0;
         double pl = planetary_dissonance(t_days);
@@ -189,18 +192,61 @@ int main(int argc, char** argv) {
         if (R != R || pl != pl || cal != cal || g != g) n_nan++;
         if (R >= 0.9999 || pl >= 0.9999 || cal >= 0.9999) n_sat++;
 
-        printf("hour %2d  pl=%.5f  cal=%.5f  γ=%.5f  R=%.5f\n",
-               hour, pl, cal, g, R);
+        /* Record mean phase per primary at this hour */
+        for (int p = 0; p < N_PRIMARIES; p++) {
+            double sx = 0, sy = 0;
+            for (int s = 0; s < N_SUBS; s++) {
+                sx += cos(k.phase[p][s]);
+                sy += sin(k.phase[p][s]);
+            }
+            phase_history[hour][p] = atan2(sy, sx);
+        }
+
+        printf("hour %2d  pl=%.5f  cal=%.5f  γ=%.5f  R=%.5f  phase[Y,A,L,D]=%.3f,%.3f,%.3f,%.3f\n",
+               hour, pl, cal, g, R,
+               phase_history[hour][0], phase_history[hour][1],
+               phase_history[hour][2], phase_history[hour][3]);
     }
+
+    /* Phase-lock variance assertion (ARCHITECTURE.md §3 v1.1 VOICE_COUPLING):
+     *   Y↔A coupling = +0.3 (high) → low variance of phase diff
+     *   Y↔L coupling = −0.2 (anti) → high variance of phase diff
+     *   A↔L coupling = +0.4 (highest) → lowest variance
+     * Test: var(Y-A diff) < var(Y-L diff) AND var(A-L diff) < var(Y-L diff). */
+    double mean_YA = 0, mean_YL = 0, mean_AL = 0;
+    for (int h = 0; h < 24; h++) {
+        mean_YA += sin(phase_history[h][0] - phase_history[h][1]);
+        mean_YL += sin(phase_history[h][0] - phase_history[h][2]);
+        mean_AL += sin(phase_history[h][1] - phase_history[h][2]);
+    }
+    mean_YA /= 24; mean_YL /= 24; mean_AL /= 24;
+    double var_YA = 0, var_YL = 0, var_AL = 0;
+    for (int h = 0; h < 24; h++) {
+        double dYA = sin(phase_history[h][0] - phase_history[h][1]) - mean_YA;
+        double dYL = sin(phase_history[h][0] - phase_history[h][2]) - mean_YL;
+        double dAL = sin(phase_history[h][1] - phase_history[h][2]) - mean_AL;
+        var_YA += dYA * dYA;
+        var_YL += dYL * dYL;
+        var_AL += dAL * dAL;
+    }
+    var_YA /= 24; var_YL /= 24; var_AL /= 24;
+
+    printf("\n# phase-lock variance check (lower = more locked):\n");
+    printf("#   var(sin(Y-A diff)) = %.6f  (coupling +0.3, expected LOW)\n", var_YA);
+    printf("#   var(sin(Y-L diff)) = %.6f  (coupling -0.2, expected HIGH)\n", var_YL);
+    printf("#   var(sin(A-L diff)) = %.6f  (coupling +0.4, expected LOWEST)\n", var_AL);
+    int phase_lock_pass = (var_YA < var_YL) && (var_AL < var_YL);
+    printf("#   gate var(YA) < var(YL): %s\n", (var_YA < var_YL) ? "PASS" : "FAIL");
+    printf("#   gate var(AL) < var(YL): %s\n", (var_AL < var_YL) ? "PASS" : "FAIL");
 
     printf("# summary: NaN=%d, sat=%d, R_min=%.4f, R_max=%.4f\n",
            n_nan, n_sat, R_min, R_max);
-    printf("# verification gate (plan §6): NaN must be 0, sat must be 0\n");
-    if (n_nan == 0 && n_sat == 0) {
-        printf("# RESULT: PASS\n");
-        return 0;
-    } else {
-        printf("# RESULT: FAIL\n");
-        return 1;
-    }
+    printf("# verification gates (plan §6):\n");
+    printf("#   NaN=0:    %s\n", n_nan == 0 ? "PASS" : "FAIL");
+    printf("#   sat=0:    %s\n", n_sat == 0 ? "PASS" : "FAIL");
+    printf("#   phase-lock (var YA,AL < var YL): %s\n",
+           phase_lock_pass ? "PASS" : "FAIL");
+    int all = (n_nan == 0) && (n_sat == 0) && phase_lock_pass;
+    printf("# RESULT: %s\n", all ? "PASS" : "FAIL");
+    return all ? 0 : 1;
 }
