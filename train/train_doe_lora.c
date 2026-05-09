@@ -822,32 +822,7 @@ int main(int argc, char** argv) {
 
         nt_tape_backward(loss_idx);
         float lr_now = nt_schedule_get_lr(&sched);
-        if (step < 3) {
-            nt_tape* tp = nt_tape_get();
-            int aidx = lr->blocks[0][0].A_idx;
-            int bidx = lr->blocks[0][0].B_idx;
-            nt_tensor* A = tp->entries[aidx].output;
-            nt_tensor* gA = tp->entries[aidx].grad;
-            nt_tensor* B = tp->entries[bidx].output;
-            float aL2=0, gaL2=0, bL2=0;
-            for (int j = 0; j < A->len; j++) aL2 += A->data[j]*A->data[j];
-            if (gA) for (int j = 0; j < gA->len; j++) gaL2 += gA->data[j]*gA->data[j];
-            for (int j = 0; j < B->len; j++) bL2 += B->data[j]*B->data[j];
-            fprintf(stderr, "[diag] step%d pre-chuck: |A|=%.6f |gA|=%.6f |B|=%.6f frozen?A=%d B=%d\n",
-                    step, sqrtf(aL2), sqrtf(gaL2), sqrtf(bL2),
-                    tp->entries[aidx].frozen, tp->entries[bidx].frozen);
-        }
         nt_tape_chuck_step(lr_now, loss);
-        if (step < 3) {
-            nt_tape* tp = nt_tape_get();
-            int aidx = lr->blocks[0][0].A_idx;
-            nt_tensor* A = tp->entries[aidx].output;
-            nt_tensor_sync_cpu(A);
-            float aL2=0;
-            for (int j = 0; j < A->len; j++) aL2 += A->data[j]*A->data[j];
-            fprintf(stderr, "[diag] step%d post-chuck (sync_cpu): |A|=%.6f cpu_dirty=%d gpu_valid=%d\n",
-                    step, sqrtf(aL2), A->cpu_dirty, A->gpu_valid);
-        }
 
         ema_loss = (step == 0) ? loss : (0.95f * ema_loss + 0.05f * loss);
 
