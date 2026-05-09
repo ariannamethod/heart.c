@@ -31,8 +31,9 @@
 #ifdef USE_CUDA
   #include "notorch_cuda.h"
 #endif
-/* Embed BPE merges directly — janus_v4_bpe_merges.h is in dario repo */
-#include "/workspace/heart.c-runpod/dario/janus_v4_bpe_merges.h"
+/* Embed BPE merges directly — janus_v4_bpe_merges.h in dario repo.
+ * Resolved via -I$(DARIO_DIR) in train/Makefile. */
+#include "janus_v4_bpe_merges.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -67,14 +68,16 @@ typedef struct {
 typedef struct {
     int resid_l_idx;    /* [B] residual lambda per layer */
     int x0_l_idx;       /* [B] x0 lambda per layer */
-    int smear_l_idx;    /* [1] (loaded but smear skipped during training) */
+    int smear_l_idx;    /* [1] frozen tape param (smear applied pre-tape in make_embedding_lookup) */
     int backout_l_idx;  /* [1] */
     int wte_idx;        /* [V, E] */
     int head_idx;       /* [V, E] */
-    int smear_g_idx;    /* [24] (loaded but smear skipped) */
+    int smear_g_idx;    /* [24] frozen tape param */
     /* Cached scalar values (read once at load) for use in tape forward */
     float* resid_l_data;   /* [B] */
     float* x0_l_data;      /* [B] */
+    float  smear_l_val;    /* scalar — applied at embed (post-norm, pre-x0-capture) */
+    float  smear_g_data[24]; /* [24] raw, used in pre-tape make_embedding_lookup */
     float  backout_l_val;
     BlockBase* blocks;
 } JanusBase;
@@ -249,6 +252,7 @@ static int janus_load(const char* path, JanusConfig* cfg, JanusBase* base) {
     {
         int sh[1] = {1};
         base->smear_l_idx = load_frozen_param(p, sh, 1);
+        base->smear_l_val = p[0];
         p += 1;
     }
     {
@@ -342,6 +346,7 @@ static int janus_load(const char* path, JanusConfig* cfg, JanusBase* base) {
     {
         int sh[1] = {24};
         base->smear_g_idx = load_frozen_param(p, sh, 1);
+        memcpy(base->smear_g_data, p, 24 * sizeof(float));
         p += 24;
     }
 
@@ -424,7 +429,17 @@ static int tile_per_seq(int src_idx, int T, int E) {
     return idx;
 }
 
-static int make_embedding_lookup(int wte_idx, int* tokens, int T, int E) {
+/* Embed + norm + smear pre-tape (matches canonical Janus prefill_batch in
+ * dario/infer_v4.c:135-157):
+ *   x = norm(wte[tokens])             — RMSnorm BEFORE smear
+ *   if smear_l > 1e-6:
+ *     for p in 1..T-1:
+ *       gate[p] = smear_l * sigmoid(smear_g[0..23] @ x[p, :24])
+ *       x[p] += gate[p] * x[p-1]
+ * Smear/wte both frozen — pre-tape is fine, no gradient flow needed back.
+ * Returns frozen [T,E] tape param; trainer must NOT re-apply seq_rmsnorm. */
+static int make_embedding_lookup(int wte_idx, int* tokens, int T, int E,
+                                  float smear_l, const float* smear_g) {
     nt_tape* tp = nt_tape_get();
     nt_tensor* W = tp->entries[wte_idx].output;
     int shape[2] = {T, E};
@@ -432,6 +447,25 @@ static int make_embedding_lookup(int wte_idx, int* tokens, int T, int E) {
     for (int t = 0; t < T; t++) {
         int tok = tokens[t];
         memcpy(h->data + (size_t)t * E, W->data + (size_t)tok * E, (size_t)E * sizeof(float));
+    }
+    /* RMSnorm each position (non-parametric, eps=1e-5 per nanochat). */
+    for (int t = 0; t < T; t++) {
+        float* row = h->data + (size_t)t * E;
+        float ss = 0.0f;
+        for (int e = 0; e < E; e++) ss += row[e] * row[e];
+        float inv = 1.0f / sqrtf(ss / (float)E + 1e-5f);
+        for (int e = 0; e < E; e++) row[e] *= inv;
+    }
+    /* Smear (skip if smear_l < threshold per canonical). */
+    if (smear_l > 1e-6f) {
+        for (int p = 1; p < T; p++) {
+            float* xp  = h->data + (size_t)p     * E;
+            float* xpm = h->data + (size_t)(p-1) * E;
+            float dot = 0.0f;
+            for (int d = 0; d < 24; d++) dot += smear_g[d] * xp[d];
+            float gate = smear_l / (1.0f + expf(-dot));
+            for (int e = 0; e < E; e++) xp[e] += gate * xpm[e];
+        }
     }
     int idx = nt_tape_param(h);
     nt_tape_freeze_param(idx);
@@ -467,10 +501,12 @@ static int forward(JanusBase* base, LoRA* lr, JanusConfig* cfg,
     int E = cfg->E, B = cfg->B, H = cfg->H, D = cfg->D;
     int backout_layer = B / 2;
 
-    /* Embed → norm (nanochat convention: x = norm(wte(idx))) */
-    int h = make_embedding_lookup(base->wte_idx, tokens, T_input, E);
-    h = nt_seq_rmsnorm(h, -1, T_input, E);   /* non-parametric */
-    /* x0 = embedding after norm (skip smear during training) */
+    /* Embed + norm + smear pre-tape (canonical Janus prefill_batch
+     * dario/infer_v4.c:135-157). smear/wte/smear_g all frozen — pre-tape
+     * compute is fine, no gradient flows back through them.
+     * x0 captured AFTER smear per canonical infer_v4.c:156. */
+    int h = make_embedding_lookup(base->wte_idx, tokens, T_input, E,
+                                   base->smear_l_val, base->smear_g_data);
     int x0 = h;
 
     int backout_buf = -1;
@@ -504,9 +540,11 @@ static int forward(JanusBase* base, LoRA* lr, JanusConfig* cfg,
         /* Content attention: full MHA (Janus has KV=H, no GQA) */
         int content = nt_mh_causal_attention(q, k, v, T_input, D);
 
-        /* RRPRAM low-rank attention with shared V_r (wvr-projected) */
-        int rrpram = nt_rrpram_lowrank_attention(blk->wr_combined_idx,
-                                                  xn, vr, T_input, E, H, D);
+        /* RRPRAM low-rank attention (canonical Janus broadcast pattern with sc=1/sqrt(D),
+         * per dario/infer_v4.c:218-249). Per-position op was function-class different
+         * and caused training plateau near ln(V) = uniform-distribution loss. */
+        int rrpram = nt_rrpram_broadcast_attention(blk->wr_combined_idx,
+                                                    xn, vr, T_input, E, H, D);
 
         /* Echo: e = wj @ xn (acts as third value path, no attention pooling) */
         int echo = nt_seq_linear(blk->wj_idx, xn, T_input);
@@ -570,6 +608,9 @@ typedef struct {
     int     n_pairs;
 } DoeCorpus;
 
+/* Parse <human>q\n<ai>a\n<human>q'... format per janus.doe/m.c:929-960.
+ * Tags are STRIPPED — only content between tags becomes tokens.
+ * mask=0 on human-segment tokens, mask=1 on ai-segment tokens. */
 static DoeCorpus* corpus_load(const char* path) {
     FILE* f = fopen(path, "rb");
     if (!f) { fprintf(stderr, "[corpus] cannot open %s\n", path); return NULL; }
@@ -582,10 +623,8 @@ static DoeCorpus* corpus_load(const char* path) {
     fclose(f);
 
     int n_pairs = 0;
-    for (long i = 0; i < sz - 1; i++) {
-        if (i == 0 || buf[i-1] == '\n') {
-            if (buf[i] == 'Q' && buf[i+1] == ':') n_pairs++;
-        }
+    for (long i = 0; i + 7 <= sz; i++) {
+        if ((i == 0 || buf[i-1] == '\n') && memcmp(buf + i, "<human>", 7) == 0) n_pairs++;
     }
 
     DoeCorpus* c = calloc(1, sizeof(DoeCorpus));
@@ -595,23 +634,21 @@ static DoeCorpus* corpus_load(const char* path) {
 
     long i = 0;
     while (i < sz) {
-        while (i < sz && !(buf[i] == 'Q' && (i+1 < sz && buf[i+1] == ':') &&
-                           (i == 0 || buf[i-1] == '\n')))
+        while (i + 7 <= sz && !((i == 0 || buf[i-1] == '\n') && memcmp(buf + i, "<human>", 7) == 0))
             i++;
-        if (i >= sz) break;
-        long q_start = i + 2;
-        while (q_start < sz && (buf[q_start] == ' ' || buf[q_start] == '\t')) q_start++;
+        if (i + 7 > sz) break;
+        long q_start = i + 7;
         long q_end = q_start;
-        while (q_end < sz && !(buf[q_end] == 'A' && (q_end+1 < sz && buf[q_end+1] == ':') &&
-                               (q_end == 0 || buf[q_end-1] == '\n')))
+        while (q_end + 4 <= sz && !((buf[q_end-1] == '\n' || q_end == q_start) &&
+                                     memcmp(buf + q_end, "<ai>", 4) == 0))
             q_end++;
-        if (q_end >= sz) break;
-        long a_start = q_end + 2;
-        while (a_start < sz && (buf[a_start] == ' ' || buf[a_start] == '\t')) a_start++;
+        if (q_end + 4 > sz) break;
+        long a_start = q_end + 4;
         long a_end = a_start;
-        while (a_end < sz && !(buf[a_end] == 'Q' && (a_end+1 < sz && buf[a_end+1] == ':') &&
-                               (a_end == 0 || buf[a_end-1] == '\n')))
+        while (a_end + 7 <= sz && !((buf[a_end-1] == '\n') && memcmp(buf + a_end, "<human>", 7) == 0))
             a_end++;
+        if (a_end + 7 > sz) a_end = sz;
+
         size_t q_len = (size_t)(q_end - q_start);
         size_t a_len = (size_t)(a_end - a_start);
         while (q_len > 0 && (buf[q_start + q_len - 1] == '\n' ||
@@ -632,7 +669,7 @@ static DoeCorpus* corpus_load(const char* path) {
         i = a_end;
     }
     free(buf);
-    fprintf(stderr, "[corpus] %d Q/A pairs parsed from %s\n", c->n_pairs, path);
+    fprintf(stderr, "[corpus] %d <human>/<ai> pairs parsed from %s\n", c->n_pairs, path);
     return c;
 }
 
@@ -642,11 +679,15 @@ static void corpus_free(DoeCorpus* c) {
     free(c->q_texts); free(c->a_texts); free(c);
 }
 
+/* DoE personality format per janus.doe/m.c:929-960: tags stripped, segments
+ * concatenated. q_text encoded with trailing "\n", a_text encoded with
+ * trailing "\n". Mask=0 on q_tokens, mask=1 on a_tokens (handled by caller
+ * via lq boundary). */
 static int* encode_pair(nt_bpe* bpe, const char* q, const char* a,
                         uint32_t* lq_out, uint32_t* la_out, int max_total) {
     char qbuf[8192], abuf[8192];
-    snprintf(qbuf, sizeof(qbuf), "### Question: %s\n### Answer: ", q);
-    snprintf(abuf, sizeof(abuf), "%s", a);
+    snprintf(qbuf, sizeof(qbuf), "%s\n", q);
+    snprintf(abuf, sizeof(abuf), "%s\n", a);
 
     int* q_toks = malloc((size_t)max_total * sizeof(int));
     int* a_toks = malloc((size_t)max_total * sizeof(int));
