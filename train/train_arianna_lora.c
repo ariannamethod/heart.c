@@ -778,6 +778,33 @@ int main(int argc, char** argv) {
 
         float loss = nt_tape_get()->entries[loss_idx].output->data[0];
 
+        if (step == 0) {
+            /* Diag: variance of logits at last position to confirm forward is alive */
+            nt_tensor* lt = nt_tape_get()->entries[logits_idx].output;
+            float* L = lt->data + (size_t)(T_input - 1) * cfg.V;
+            float mean = 0, var = 0, mn = 1e30f, mx = -1e30f;
+            for (int v = 0; v < cfg.V; v++) {
+                mean += L[v];
+                if (L[v] < mn) mn = L[v];
+                if (L[v] > mx) mx = L[v];
+            }
+            mean /= cfg.V;
+            for (int v = 0; v < cfg.V; v++) var += (L[v] - mean) * (L[v] - mean);
+            var /= cfg.V;
+            fprintf(stderr, "[diag] step0 logits[last-pos]: mean=%.4f var=%.4f min=%.4f max=%.4f\n",
+                    mean, var, mn, mx);
+            /* Also diag tok_emb norm — sanity-check the base loader */
+            nt_tensor* te = nt_tape_get()->entries[base.tok_emb_idx].output;
+            float emb_var = 0, emb_mean = 0;
+            int n_emb = te->len < 100000 ? te->len : 100000;
+            for (int i = 0; i < n_emb; i++) emb_mean += te->data[i];
+            emb_mean /= n_emb;
+            for (int i = 0; i < n_emb; i++) emb_var += (te->data[i] - emb_mean) * (te->data[i] - emb_mean);
+            emb_var /= n_emb;
+            fprintf(stderr, "[diag] tok_emb (first %d floats): mean=%.6f var=%.6f\n",
+                    n_emb, emb_mean, emb_var);
+        }
+
         nt_tape_backward(loss_idx);
         float lr_now = nt_schedule_get_lr(&sched);
         nt_tape_chuck_step(lr_now, loss);
